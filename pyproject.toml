@@ -7,13 +7,13 @@ name = "kaful-data-twin"
 version = "0.1.0"
 description = "Data-first streaming remaining-useful-life digital twin for CNC machines"
 requires-python = ">=3.11,<3.13"
-dependencies = []
+dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
-include = ["domain*", "storage*"]
+include = ["domain*", "storage*", "features*", "datasets*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
