@@ -7,3 +7,5 @@ __pycache__/
 data/
 raw/
 .DS_Store
+.pytest_cache/
+build/
