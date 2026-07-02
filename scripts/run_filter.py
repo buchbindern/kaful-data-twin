@@ -1,12 +1,11 @@
 """
-Run the particle filter over a run's stored features (M6). Run from repo root:
+Run the particle filter over a run's stored features (M6/M7). Run from repo root:
 
     python scripts/run_filter.py --record c1 [--process-noise 0.002]
 
-Rebuilds a fresh cold-start twin, clears any prior RUL rows (e.g. the stub's),
-then streams the stored features through the ParticleTwin cut by cut — updating
-wear and writing real RUL. Reports wear tracking vs the ground-truth labels,
-which is the M6 validation: does the filter recover wear from noisy force?
+Rebuilds a fresh cold-start twin, clears any prior RUL rows, then streams the
+stored features through the ParticleTwin cut by cut — updating wear and writing
+Monte Carlo RUL. Reports wear tracking vs ground-truth labels.
 """
 
 from __future__ import annotations
@@ -45,16 +44,17 @@ def main() -> None:
         rul = twin.update(args.record, f.cut_index, f.features)
         ds.append_rul(rul)
         rows.append((f.cut_index, twin.last_wear_mean, twin.last_wear_lo,
-                     twin.last_wear_hi, labels.get(f.cut_index), rul.rul_median))
+                     twin.last_wear_hi, labels.get(f.cut_index), rul.rul_median,
+                     twin.last_rul_censored))
 
-    errs = [(m - t) for _, m, _, _, t, _ in rows if t is not None]
+    errs = [(m - t) for _, m, _, _, t, _, _ in rows if t is not None]
     rmse = float(np.sqrt(np.mean(np.square(errs))) * 1000)
     print(f"ran filter over {len(rows)} cuts (process_noise={args.process_noise*1000:.1f} um)")
     print(f"wear-tracking RMSE vs ground truth: {rmse:.1f} um\n")
-    print(f"{'cut':>4} {'true_um':>8} {'est_um':>8} {'est_90%_CI_um':>16} {'RUL_cuts':>9}")
-    for cut, m, lo, hi, t, rul in rows[::21]:
+    print(f"{'cut':>4} {'true_um':>8} {'est_um':>8} {'est_90%_CI_um':>16} {'RUL':>6} {'censored':>9}")
+    for cut, m, lo, hi, t, rul, cens in rows[::21]:
         tt = f"{t*1000:6.1f}" if t is not None else "   -  "
-        print(f"{cut:>4} {tt:>8} {m*1000:8.1f} {f'[{lo*1000:.1f},{hi*1000:.1f}]':>16} {rul:9.0f}")
+        print(f"{cut:>4} {tt:>8} {m*1000:8.1f} {f'[{lo*1000:.1f},{hi*1000:.1f}]':>16} {rul:6.0f} {cens:9.2f}")
     ds.close()
 
 

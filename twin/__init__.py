@@ -7,8 +7,10 @@ from twin.observation import PowerLawObservation
 from twin.cloud import ParticleCloud, weighted_quantile
 from twin.build import build_twin, models_from_state
 from twin.filter import filter_step, systematic_resample
+from twin.rul import project_rul, RULDistribution
 from twin.particle_twin import ParticleTwin
 
 __all__ = ["Twin", "StubTwin", "PowerLawWear", "PowerLawObservation",
            "ParticleCloud", "weighted_quantile", "build_twin", "models_from_state",
-           "filter_step", "systematic_resample", "ParticleTwin"]
+           "filter_step", "systematic_resample", "project_rul", "RULDistribution",
+           "ParticleTwin"]
