@@ -115,3 +115,15 @@ class TwinState:
     params: dict[str, Any] = field(default_factory=dict)
     particles: Optional[bytes] = None
     updated_at: datetime = field(default_factory=_utcnow)
+
+
+@dataclass
+class WearLabel:
+    """Ground-truth tool wear after one cut, in mm. REFERENCE / VALIDATION ONLY —
+    the twin never consumes these to run (decision #2). For PHM this is the mean of
+    the three flute measurements (VB1, VB2, VB3), converted from 1e-3 mm to mm.
+    Stored per run so a labeled reference run (c1) can score the twin at M8.
+    """
+    run_id: str
+    cut_index: int
+    wear_mm: float

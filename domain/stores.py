@@ -33,6 +33,7 @@ from domain.models import (
     FeatureRecord,
     RULPrediction,
     TwinState,
+    WearLabel,
 )
 
 
@@ -108,6 +109,16 @@ class DataStore(ABC):
     @abstractmethod
     def load_twin_state(self, run_id: str) -> Optional[TwinState]:
         """Load the most recent twin posterior for a run, or None if not built yet."""
+        ...
+
+    # --- Wear labels (reference/validation only; independent of ingest) ---
+    @abstractmethod
+    def append_wear_label(self, label: WearLabel) -> None: ...
+
+    @abstractmethod
+    def read_wear_labels(self, run_id: str) -> list[WearLabel]:
+        """All wear labels for a run, ordered by cut_index. Used at M8 (validation)
+        and to fit the observation model on a labeled reference run (M5c)."""
         ...
 
 

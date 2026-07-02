@@ -45,3 +45,27 @@ def iter_cut_files(folder: str | Path) -> list[tuple[int, Path]]:
         out.append((int(p.stem.split("_")[-1]), p))
     out.sort()
     return out
+
+
+def load_wear_labels(path: str | Path) -> list[tuple[int, float]]:
+    """Read a PHM wear file into (cut_index, wear_mm) pairs, sorted by cut_index.
+
+    File columns: cut, flute_1, flute_2, flute_3, with wear in 1e-3 mm. The primary
+    wear label is the mean of the three flutes, converted to mm. A header row
+    (non-numeric first field) is auto-detected and skipped.
+    """
+    out: list[tuple[int, float]] = []
+    for line in Path(path).read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(",")
+        try:
+            cut = int(float(parts[0]))
+        except ValueError:
+            continue  # header row
+        flutes = [float(x) for x in parts[1:4]]     # VB1, VB2, VB3 in 1e-3 mm
+        wear_mm = (sum(flutes) / len(flutes)) / 1000.0
+        out.append((cut, wear_mm))
+    out.sort()
+    return out

@@ -7,18 +7,11 @@ from domain.models import (
     FeatureRecord,
     RULPrediction,
     TwinState,
+    WearLabel,
 )
 from domain.stores import DataStore, ObjectStore
 
 __all__ = [
-    # models
-    "Machine",
-    "Run",
-    "Cut",
-    "FeatureRecord",
-    "RULPrediction",
-    "TwinState",
-    # interfaces
-    "DataStore",
-    "ObjectStore",
+    "Machine", "Run", "Cut", "FeatureRecord", "RULPrediction", "TwinState", "WearLabel",
+    "DataStore", "ObjectStore",
 ]

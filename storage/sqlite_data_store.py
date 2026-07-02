@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from domain.models import (
-    Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState,
+    Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState, WearLabel,
 )
 from domain.stores import DataStore
 
@@ -93,6 +93,13 @@ CREATE TABLE IF NOT EXISTS twin_state (
     params_json TEXT   NOT NULL,
     particles  BLOB,
     updated_at TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS wear_labels (
+    run_id    TEXT    NOT NULL REFERENCES runs(run_id),
+    cut_index INTEGER NOT NULL,
+    wear_mm   REAL    NOT NULL,
+    PRIMARY KEY (run_id, cut_index)
 );
 """
 
@@ -243,3 +250,17 @@ class SQLiteDataStore(DataStore):
         return TwinState(row["run_id"], row["cut_index"], json.loads(row["params_json"]),
                          bytes(particles) if particles is not None else None,
                          _parse_dt(row["updated_at"]))
+
+    # ---------------- Wear labels (reference/validation only) ----------------
+    def append_wear_label(self, label: WearLabel) -> None:
+        self._conn.execute(
+            "INSERT INTO wear_labels VALUES (?,?,?)",
+            (label.run_id, label.cut_index, label.wear_mm),
+        )
+        self._conn.commit()
+
+    def read_wear_labels(self, run_id: str) -> list[WearLabel]:
+        rows = self._conn.execute(
+            "SELECT * FROM wear_labels WHERE run_id=? ORDER BY cut_index", (run_id,)
+        ).fetchall()
+        return [WearLabel(r["run_id"], r["cut_index"], r["wear_mm"]) for r in rows]
