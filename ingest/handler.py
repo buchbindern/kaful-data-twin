@@ -1,5 +1,5 @@
 """
-IngestHandler (M4) — the orchestrator for one cut. THE load-bearing artifact.
+IngestHandler (M4) — the orchestrator for one cut. THE load bearing artifact.
 
 ingest_cut() is a plain method so that at M9 a FastAPI endpoint can wrap this
 exact call: "same handler, different transport." The order matters — raw blob is
