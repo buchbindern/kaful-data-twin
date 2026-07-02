@@ -264,3 +264,7 @@ class SQLiteDataStore(DataStore):
             "SELECT * FROM wear_labels WHERE run_id=? ORDER BY cut_index", (run_id,)
         ).fetchall()
         return [WearLabel(r["run_id"], r["cut_index"], r["wear_mm"]) for r in rows]
+
+    def clear_rul(self, run_id: str) -> None:
+        self._conn.execute("DELETE FROM rul_predictions WHERE run_id=?", (run_id,))
+        self._conn.commit()

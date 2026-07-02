@@ -20,6 +20,15 @@ from dataclasses import dataclass
 import numpy as np
 
 
+def weighted_quantile(values, weights, q: float) -> float:
+    """Weighted quantile of `values` (q in [0,1])."""
+    values = np.asarray(values, float); weights = np.asarray(weights, float)
+    order = np.argsort(values)
+    v = values[order]; cw = np.cumsum(weights[order])
+    cw /= cw[-1]
+    return float(np.interp(q, cw, v))
+
+
 @dataclass
 class ParticleCloud:
     wear: np.ndarray      # (N,) candidate wear per particle
@@ -34,10 +43,7 @@ class ParticleCloud:
 
     def quantile_wear(self, q: float) -> float:
         """Weighted quantile of wear (q in [0,1])."""
-        order = np.argsort(self.wear)
-        w = self.wear[order]
-        cw = np.cumsum(self.weights[order])
-        return float(np.interp(q, cw, w))
+        return weighted_quantile(self.wear, self.weights, q)
 
     def to_bytes(self) -> bytes:
         buf = io.BytesIO()

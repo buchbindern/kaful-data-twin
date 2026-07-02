@@ -100,6 +100,11 @@ class DataStore(ABC):
         """All RUL predictions for a run, ordered by cut_index."""
         ...
 
+    @abstractmethod
+    def clear_rul(self, run_id: str) -> None:
+        """Delete all RUL predictions for a run (e.g. before re-running the filter)."""
+        ...
+
     # --- Twin state (overwrite once per cut; must survive between cuts) ---
     @abstractmethod
     def save_twin_state(self, state: TwinState) -> None:
