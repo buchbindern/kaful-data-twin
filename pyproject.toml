@@ -13,7 +13,7 @@ dependencies = ["numpy>=1.24", "scipy>=1.11"]
 dev = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
-include = ["domain*", "storage*", "features*", "datasets*", "ingest*", "twin*"]
+include = ["domain*", "storage*", "features*", "datasets*", "ingest*", "twin*", "evaluation*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
