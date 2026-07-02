@@ -32,3 +32,16 @@ def load_cut_waveform(path: str | Path) -> np.ndarray:
             f"got array of shape {arr.shape}"
         )
     return arr
+
+
+def iter_cut_files(folder: str | Path) -> list[tuple[int, Path]]:
+    """Find PHM per-cut CSVs in a folder, returned as (cut_index, path) sorted by
+    cut_index. Parses the index from filenames like 'c_1_001.csv' -> 1.
+    The caller supplies the exact folder, so the (Kaggle-specific) doubled
+    'c1/c1' nesting is not baked into this adapter."""
+    folder = Path(folder)
+    out: list[tuple[int, Path]] = []
+    for p in folder.glob("c_*_*.csv"):
+        out.append((int(p.stem.split("_")[-1]), p))
+    out.sort()
+    return out

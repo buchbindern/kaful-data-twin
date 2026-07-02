@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS twin_state (
 class SQLiteDataStore(DataStore):
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)  # create ./var etc. if absent
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")  # SQLite needs this per-connection
