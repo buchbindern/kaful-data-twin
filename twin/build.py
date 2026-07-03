@@ -51,7 +51,7 @@ def build_twin(data_store, reference_run_id: str, *, feature_name: str = "force_
         "feature_name": feature_name,
         "threshold_mm": threshold_mm,
         "degradation": {"a": deg.a, "p": deg.p},
-        "observation": {"c": obs.c, "k": obs.k, "sigma": obs.sigma},
+        "observation": {"c": obs.c, "k": obs.k, "sigma": obs.sigma, "f0": obs.f0},
         "n_particles": n_particles,
         "onset_cut": deg_info["onset_cut"],
     }
@@ -63,6 +63,7 @@ def models_from_state(state: TwinState) -> tuple[PowerLawWear, PowerLawObservati
     """Reconstruct the fixed models from a persisted TwinState (used by M6/M7)."""
     d = state.params
     deg = PowerLawWear(d["degradation"]["a"], d["degradation"]["p"])
-    obs = PowerLawObservation(d["feature_name"], d["observation"]["c"],
-                              d["observation"]["k"], d["observation"]["sigma"])
+    o = d["observation"]
+    obs = PowerLawObservation(d["feature_name"], o["c"], o["k"], o["sigma"],
+                              o.get("f0", 0.0))
     return deg, obs

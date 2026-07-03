@@ -24,6 +24,7 @@ def main() -> None:
     ap.add_argument("--record", default="c1")
     ap.add_argument("--feature", default="force_z_rms")
     ap.add_argument("--process-noise", type=float, default=0.002)
+    ap.add_argument("--sigma-scale", type=float, default=2.5)
     ap.add_argument("--n-particles", type=int, default=2000)
     ap.add_argument("--onset", type=float, default=None)
     ap.add_argument("--store-dir", default="var")
@@ -36,7 +37,8 @@ def main() -> None:
                                   n_particles=args.n_particles, onset_cut=args.onset))
     ds.clear_rul(args.record)
 
-    twin = ParticleTwin(ds, process_noise=args.process_noise, seed=0)
+    twin = ParticleTwin(ds, process_noise=args.process_noise,
+                        sigma_scale=args.sigma_scale, seed=0)
     feats = ds.read_all_features(args.record)
 
     rows = []

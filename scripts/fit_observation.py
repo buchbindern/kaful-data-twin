@@ -39,7 +39,7 @@ def main() -> None:
 
     om = PowerLawObservation.fit(wears, vals, args.feature)
     print(f"observation model for {args.feature!r} on {len(pairs)} cuts:")
-    print(f"  g(wear) = {om.c:.2f} * wear^{om.k:.3f}     noise sigma = {om.sigma:.3f}")
+    print(f"  g(wear) = {om.f0:.2f} + {om.c:.2f} * wear^{om.k:.3f}     noise sigma = {om.sigma:.3f}")
     print(f"  correlation(feature, wear) = {np.corrcoef(vals, wears)[0,1]:+.3f}")
 
     obs = vals[np.argmax(wears)]

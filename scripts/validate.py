@@ -31,6 +31,7 @@ def main() -> None:
     ap.add_argument("--record", default="c1")
     ap.add_argument("--feature", default="force_z_rms")
     ap.add_argument("--process-noise", type=float, default=0.002)
+    ap.add_argument("--sigma-scale", type=float, default=2.5)
     ap.add_argument("--n-particles", type=int, default=2000)
     ap.add_argument("--onset", type=float, default=None)
     ap.add_argument("--alpha", type=float, default=0.2)
@@ -48,7 +49,8 @@ def main() -> None:
     ds.save_twin_state(build_twin(ds, args.record, feature_name=args.feature,
                                   n_particles=args.n_particles, onset_cut=args.onset))
     ds.clear_rul(args.record)
-    twin = ParticleTwin(ds, process_noise=args.process_noise, seed=0)
+    twin = ParticleTwin(ds, process_noise=args.process_noise,
+                        sigma_scale=args.sigma_scale, seed=0)
 
     C, WE, WLO, WHI, RM, RLO, RHI, CEN = ([] for _ in range(8))
     for f in ds.read_all_features(args.record):
@@ -78,7 +80,9 @@ def main() -> None:
     print(f"  wear RMSE  overall {rmse(WE,WT)*um:5.1f} um   "
           f"running-in {rmse(WE[ri],WT[ri])*um:5.1f} um   wear-out {rmse(WE[wo],WT[wo])*um:5.1f} um")
     print(f"  wear MAE   overall {mae(WE,WT)*um:5.1f} um")
-    print(f"  wear 90% CI coverage: {coverage(WT,WLO,WHI):.2f}  (target ~0.90)")
+    print(f"  wear 90% CI coverage: overall {coverage(WT,WLO,WHI):.2f}   "
+          f"running-in {coverage(WT[ri],WLO[ri],WHI[ri]):.2f}   "
+          f"wear-out {coverage(WT[wo],WLO[wo],WHI[wo]):.2f}   (target ~0.90)")
 
     region = CEN < 0.2
     print(f"\nTIER 2 - RUL vs EXTRAPOLATED pseudo-truth, wear-out region "

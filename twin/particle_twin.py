@@ -1,10 +1,11 @@
 """
-ParticleTwin (M6/M7) — the real Twin. Replaces StubTwin.
+ParticleTwin (M6/M7, +sigma_scale at M8) — the real Twin. Replaces StubTwin.
 
 Each cut: load the persisted TwinState, run one filter step against the observed
 feature (M6), project the posterior cloud to an RUL distribution via Monte Carlo
-(M7), and persist the updated state. Satisfies the same Twin.update() contract the
-handler already calls, so nothing upstream changes.
+(M7), and persist the updated state. sigma_scale (M8) inflates the observation
+noise to reflect MODEL BIAS the fit residual doesn't capture — a calibration
+lever, not a fudge.
 """
 
 from __future__ import annotations
@@ -21,15 +22,15 @@ from twin.rul import project_rul
 
 class ParticleTwin(Twin):
     def __init__(self, data_store, *, process_noise: float = 0.002,
-                 resample_frac: float = 0.5, horizon: int = 500,
-                 rul_samples: int = 1000, seed: int = 0) -> None:
+                 sigma_scale: float = 2.5, resample_frac: float = 0.5,
+                 horizon: int = 500, rul_samples: int = 1000, seed: int = 0) -> None:
         self.ds = data_store
         self.process_noise = process_noise
+        self.sigma_scale = sigma_scale
         self.resample_frac = resample_frac
         self.horizon = horizon
         self.rul_samples = rul_samples
         self.rng = np.random.default_rng(seed)
-        # exposed for inspection after each update()
         self.last_wear_mean = None
         self.last_wear_lo = None
         self.last_wear_hi = None
@@ -41,6 +42,7 @@ class ParticleTwin(Twin):
             raise ValueError(f"no twin state for run {run_id!r}; run build_twin first")
         cloud = ParticleCloud.from_bytes(state.particles)
         deg, obs = models_from_state(state)
+        obs.sigma *= self.sigma_scale   # inflate obs noise to reflect model bias, not just scatter
         feature_name = state.params["feature_name"]
         threshold = state.params["threshold_mm"]
         observed = features[feature_name]
@@ -53,7 +55,6 @@ class ParticleTwin(Twin):
         self.last_wear_lo = cloud.quantile_wear(0.05)
         self.last_wear_hi = cloud.quantile_wear(0.95)
 
-        # RUL: Monte Carlo forward simulation of the posterior cloud (M7)
         dist = project_rul(cloud, deg, threshold=threshold, process_noise=self.process_noise,
                            rng=self.rng, horizon=self.horizon, n_samples=self.rul_samples)
         self.last_rul_censored = dist.censored_frac

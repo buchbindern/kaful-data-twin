@@ -77,3 +77,17 @@ def test_clear_rul(tmp_path):
     ds.clear_rul("c1")
     assert len(ds.read_all_rul("c1")) == 0
     ds.close()
+
+
+def test_sigma_scale_widens_wear_band(tmp_path):
+    ds = _synthetic_store(tmp_path)
+    ds.save_twin_state(build_twin(ds, "c1", n_particles=2000))
+    feats = ds.read_all_features("c1")
+    def band_at_cut(scale):
+        ds.save_twin_state(build_twin(ds, "c1", n_particles=2000))
+        tw = ParticleTwin(ds, process_noise=0.002, sigma_scale=scale, seed=0)
+        for f in feats[:30]:
+            tw.update("c1", f.cut_index, f.features)
+        return tw.last_wear_hi - tw.last_wear_lo
+    assert band_at_cut(4.0) > band_at_cut(1.0)
+    ds.close()
