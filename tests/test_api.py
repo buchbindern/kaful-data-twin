@@ -69,3 +69,30 @@ def test_run_without_twin_is_409(tmp_path):
     client = TestClient(create_app(store_dir=str(tmp_path)))
     r = client.post("/machines/phm2010/runs/c9/cuts", content=encode_waveform(RNG.standard_normal((500, 7))))
     assert r.status_code == 409
+
+
+def test_start_new_run_endpoint(client):
+    r = client.post("/machines/phm2010/runs",
+                    json={"run_id": "run2", "reference_run_id": "c1", "tool_id": "T-02"})
+    assert r.status_code == 200 and r.json()["status"] == "active"
+    import numpy as np
+    from ingest import encode_waveform
+    wf = encode_waveform(np.random.default_rng(1).standard_normal((800, 7)))
+    r2 = client.post("/machines/phm2010/runs/run2/cuts", content=wf)
+    assert r2.status_code == 200 and r2.json()["cut_index"] == 1   # cut_index reset
+
+def test_start_run_bad_reference_is_400(client):
+    r = client.post("/machines/phm2010/runs",
+                    json={"run_id": "run3", "reference_run_id": "ghost"})
+    assert r.status_code == 400
+
+
+def test_root_serves_dashboard(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "KAFUL" in r.text
+
+def test_runs_list_endpoint(client):
+    r = client.get("/machines/phm2010/runs")
+    assert r.status_code == 200
+    runs = r.json()["runs"]
+    assert any(x["run_id"] == "c1" and x["has_labels"] for x in runs)

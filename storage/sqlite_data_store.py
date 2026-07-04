@@ -164,6 +164,12 @@ class SQLiteDataStore(DataStore):
                            (_dt(ended_at), run_id))
         self._conn.commit()
 
+    def list_runs(self, machine_id: str):
+        rows = self._conn.execute(
+            "SELECT * FROM runs WHERE machine_id=? ORDER BY started_at DESC", (machine_id,)
+        ).fetchall()
+        return [self._row_to_run(r) for r in rows]
+
     # ---------------- Cut ----------------
     def append_cut(self, cut: Cut) -> None:
         self._conn.execute(

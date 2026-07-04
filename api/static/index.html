@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Kaful · tool-wear prognostics</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#10161f; --line:#1d2735; --grid:#161e29;
+    --sig:#35d0c0; --sig-dim:rgba(53,208,192,.14);
+    --truth:#e6edf3; --rul:#e8b13b; --rul-dim:rgba(232,177,59,.12);
+    --danger:#ff5d5d; --text:#c9d6e5; --dim:#5b6b7f;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans)}
+  body{display:flex;flex-direction:column;min-height:100vh}
+  header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .brand{font-weight:650;letter-spacing:.08em;font-size:14px}
+  .brand b{color:var(--sig)}
+  .brand span{color:var(--dim);font-weight:400;margin-left:10px;letter-spacing:.02em}
+  header .controls{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  label.ctl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;display:flex;flex-direction:column;gap:4px}
+  select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px}
+  button{background:var(--sig);color:#04120f;border:0;border-radius:6px;padding:9px 18px;font-weight:650;font-family:var(--sans);cursor:pointer;letter-spacing:.02em}
+  button:disabled{opacity:.4;cursor:default}
+  button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  .readouts{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+  .ro{background:var(--bg);padding:14px 22px}
+  .ro .k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.12em}
+  .ro .v{font-family:var(--mono);font-size:26px;margin-top:5px;font-variant-numeric:tabular-nums}
+  .ro .u{font-size:13px;color:var(--dim);margin-left:4px}
+  .ro.rul .v{color:var(--rul)} .ro.wear .v{color:var(--sig)}
+  .badge{display:inline-block;font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+  .badge.hot{color:var(--sig);border-color:var(--sig)}
+  main{flex:1;display:flex;flex-direction:column;gap:14px;padding:18px 22px}
+  .plot{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px 6px}
+  .plot .cap{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+  .plot .cap .t{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+  .plot .cap .legend{font-family:var(--mono);font-size:11px;color:var(--dim);display:flex;gap:14px}
+  .plot .cap .legend i{font-style:normal}
+  .plot .cap .legend .s{color:var(--sig)} .plot .cap .legend .tr{color:var(--truth)} .plot .cap .legend .th{color:var(--danger)} .plot .cap .legend .r{color:var(--rul)}
+  #wearWrap{flex:1.6} #rulWrap{flex:1}
+  canvas{width:100%;display:block}
+  .foot{padding:8px 22px;border-top:1px solid var(--line);font-size:11px;color:var(--dim);font-family:var(--mono)}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><b>KAFUL</b> tool-wear prognostics<span>PHM 2010 · particle-filter digital twin</span></div>
+    <div class="controls">
+      <label class="ctl">tool run<select id="run"></select></label>
+      <label class="ctl">model fit on<select id="ref"></select></label>
+      <button id="go">▶ Run replay</button>
+      <button id="reset" class="ghost">Reset</button>
+    </div>
+  </header>
+
+  <section class="readouts">
+    <div class="ro"><div class="k">cut</div><div class="v"><span id="ro-cut">—</span><span class="u" id="ro-n"></span></div></div>
+    <div class="ro wear"><div class="k">wear estimate</div><div class="v"><span id="ro-wear">—</span><span class="u">µm</span></div></div>
+    <div class="ro rul"><div class="k">remaining life</div><div class="v"><span id="ro-rul">—</span><span class="u">cuts</span></div></div>
+    <div class="ro"><div class="k">state</div><div class="v" style="font-size:16px;padding-top:6px"><span class="badge" id="ro-state">idle</span></div></div>
+  </section>
+
+  <main>
+    <div class="plot" id="wearWrap">
+      <div class="cap"><span class="t">flank wear · estimate vs ground truth</span>
+        <span class="legend"><i class="s">— estimate</i><i class="s" style="opacity:.5">▨ 90% CI</i><i class="tr">-- measured</i><i class="th">— 0.2mm failure</i></span></div>
+      <canvas id="wear"></canvas>
+    </div>
+    <div class="plot" id="rulWrap">
+      <div class="cap"><span class="t">remaining useful life · cuts to failure</span>
+        <span class="legend"><i class="r">— median</i><i class="r" style="opacity:.5">▨ 90% CI</i></span></div>
+      <canvas id="rul"></canvas>
+    </div>
+  </main>
+  <div class="foot" id="foot">wear is a hidden state recovered from force alone — labels shown for reference only, never used to run the filter.</div>
+
+<script>
+const MACHINE = "phm2010";
+const THRESH = 200; // µm failure line
+let es = null, N = 0;
+let cuts=[], wm=[], wlo=[], whi=[], wt=[];        // wear series (µm)
+let rc=[], rmed=[], rlo=[], rhi=[];               // rul series (cuts, only where meaningful)
+
+const $ = id => document.getElementById(id);
+
+async function loadRuns(){
+  const r = await fetch(`/machines/${MACHINE}/runs`).then(x=>x.json());
+  const runSel = $("run"), refSel = $("ref");
+  runSel.innerHTML = ""; refSel.innerHTML = '<option value="">self (fit on this run)</option>';
+  r.runs.forEach(run=>{
+    const o = document.createElement("option");
+    o.value = run.run_id;
+    o.textContent = `${run.run_id}  ·  ${run.n_cuts} cuts${run.has_labels?"":"  (no labels)"}`;
+    runSel.appendChild(o);
+    if(run.has_labels){
+      const o2 = document.createElement("option"); o2.value = run.run_id; o2.textContent = run.run_id;
+      refSel.appendChild(o2);
+    }
+  });
+}
+
+function resetSeries(){
+  cuts=[];wm=[];wlo=[];whi=[];wt=[];rc=[];rmed=[];rlo=[];rhi=[];
+  $("ro-cut").textContent="—";$("ro-wear").textContent="—";$("ro-rul").textContent="—";
+  $("ro-state").textContent="idle";$("ro-state").className="badge";
+  draw();
+}
+
+function run(){
+  if(es) es.close();
+  resetSeries();
+  const runId = $("run").value, ref = $("ref").value;
+  const url = `/machines/${MACHINE}/runs/${runId}/replay` + (ref?`?reference=${ref}`:"");
+  $("go").disabled = true; $("go").textContent = "● streaming";
+  es = new EventSource(url);
+  es.onmessage = ev=>{
+    const d = JSON.parse(ev.data);
+    if(d.type==="meta"){ N=d.n; $("ro-n").textContent = "/ "+N;
+      $("foot").textContent = `run ${d.run} · model fit on ${d.reference}${d.reference!==d.run?" (cross-run test)":""} · ${d.n} cuts · failure at ${d.threshold_um} µm`;
+      return; }
+    if(d.type==="done"){ es.close(); $("go").disabled=false; $("go").textContent="▶ Run replay"; return; }
+    // cut event
+    cuts.push(d.cut); wm.push(d.wear_mean); wlo.push(d.wear_lo); whi.push(d.wear_hi); wt.push(d.wear_true);
+    const inWearout = d.censored < 0.5;
+    if(inWearout){ rc.push(d.cut); rmed.push(d.rul_median); rlo.push(d.rul_lo); rhi.push(d.rul_hi); }
+    // readouts
+    $("ro-cut").textContent = d.cut;
+    $("ro-wear").textContent = d.wear_mean.toFixed(0);
+    if(inWearout){ $("ro-rul").textContent = "~"+d.rul_median.toFixed(0);
+      $("ro-state").textContent="wear-out · tracking"; $("ro-state").className="badge hot"; }
+    else { $("ro-rul").textContent = "— warming up"; 
+      $("ro-state").textContent=`pre-wear-out · ${(d.censored*100).toFixed(0)}% censored`; $("ro-state").className="badge"; }
+    draw();
+  };
+  es.onerror = ()=>{ es.close(); $("go").disabled=false; $("go").textContent="▶ Run replay"; };
+}
+
+// ---- canvas drawing ----
+function fit(cv){
+  const r = cv.getBoundingClientRect(); const dpr = window.devicePixelRatio||1;
+  cv.width = Math.max(1,r.width*dpr); cv.height = Math.max(1,r.height*dpr);
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {ctx, w:r.width, h:r.height};
+}
+function axes(ctx,w,h,pad,xMax,yMin,yMax,yTicks,yFmt){
+  ctx.font="11px ui-monospace,monospace"; ctx.textBaseline="middle";
+  ctx.strokeStyle="#161e29"; ctx.fillStyle="#5b6b7f"; ctx.lineWidth=1;
+  for(let i=0;i<=yTicks;i++){
+    const yv = yMin+(yMax-yMin)*i/yTicks;
+    const y = h-pad.b-(h-pad.t-pad.b)*(yv-yMin)/(yMax-yMin);
+    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();
+    ctx.textAlign="right"; ctx.fillText(yFmt(yv),pad.l-8,y);
+  }
+  ctx.textAlign="center";
+  for(let gx=0;gx<=xMax;gx+= Math.max(1,Math.round(xMax/6))){
+    const x = pad.l+(w-pad.l-pad.r)*(gx/Math.max(1,xMax));
+    ctx.fillText(gx, x, h-pad.b+14);
+  }
+}
+const X = (c,pad,w,xMax)=> pad.l+(w-pad.l-pad.r)*((c-1)/Math.max(1,xMax-1));
+const Y = (v,pad,h,yMin,yMax)=> h-pad.b-(h-pad.t-pad.b)*(v-yMin)/(yMax-yMin);
+
+function band(ctx,xs,los,his,pad,w,h,xMax,yMin,yMax,fill){
+  if(xs.length<2) return;
+  ctx.beginPath();
+  xs.forEach((c,i)=>{const x=X(c,pad,w,xMax),y=Y(his[i],pad,h,yMin,yMax); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  for(let i=xs.length-1;i>=0;i--){const x=X(xs[i],pad,w,xMax),y=Y(los[i],pad,h,yMin,yMax); ctx.lineTo(x,y);}
+  ctx.closePath(); ctx.fillStyle=fill; ctx.fill();
+}
+function line(ctx,xs,ys,pad,w,h,xMax,yMin,yMax,color,dash,width,glow){
+  const pts = xs.map((c,i)=>[c,ys[i]]).filter(p=>p[1]!=null);
+  if(pts.length<1) return;
+  ctx.save(); ctx.setLineDash(dash||[]); ctx.lineWidth=width||2; ctx.strokeStyle=color;
+  if(glow){ctx.shadowColor=color;ctx.shadowBlur=8;}
+  ctx.beginPath();
+  pts.forEach((p,i)=>{const x=X(p[0],pad,w,xMax),y=Y(p[1],pad,h,yMin,yMax); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.stroke(); ctx.restore();
+}
+function thresholdLine(ctx,val,pad,w,h,yMin,yMax,color,label){
+  const y=Y(val,pad,h,yMin,yMax);
+  ctx.save();ctx.setLineDash([6,5]);ctx.strokeStyle=color;ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();
+  ctx.setLineDash([]);ctx.fillStyle=color;ctx.font="11px ui-monospace,monospace";ctx.textAlign="left";ctx.textBaseline="bottom";
+  ctx.fillText(label,pad.l+4,y-3);ctx.restore();
+}
+
+function draw(){
+  drawWear(); drawRul();
+}
+function drawWear(){
+  const {ctx,w,h}=fit($("wear")); const pad={l:44,r:14,t:12,b:22};
+  const xMax=Math.max(N,10), yMin=0, yMax=220;
+  ctx.clearRect(0,0,w,h);
+  axes(ctx,w,h,pad,xMax,yMin,yMax,5,v=>v.toFixed(0));
+  band(ctx,cuts,wlo,whi,pad,w,h,xMax,yMin,yMax,"rgba(53,208,192,.14)");
+  thresholdLine(ctx,THRESH,pad,w,h,yMin,yMax,"#ff5d5d","0.200 mm · ISO 8688 failure");
+  line(ctx,cuts,wt,pad,w,h,xMax,yMin,yMax,"#e6edf3",[5,4],1.4,false);   // truth
+  line(ctx,cuts,wm,pad,w,h,xMax,yMin,yMax,"#35d0c0",[],2.2,true);        // estimate
+}
+function drawRul(){
+  const {ctx,w,h}=fit($("rul")); const pad={l:44,r:14,t:12,b:22};
+  const xMax=Math.max(N,10);
+  let yMax=60; for(const v of rhi) if(v<600) yMax=Math.max(yMax,v);
+  yMax=Math.min(yMax,Math.max(60,Math.ceil(yMax/20)*20));
+  ctx.clearRect(0,0,w,h);
+  axes(ctx,w,h,pad,xMax,0,yMax,4,v=>v.toFixed(0));
+  band(ctx,rc,rlo.map(v=>Math.min(v,yMax)),rhi.map(v=>Math.min(v,yMax)),pad,w,h,xMax,0,yMax,"rgba(232,177,59,.12)");
+  line(ctx,rc,rmed,pad,w,h,xMax,0,yMax,"#e8b13b",[],2.2,true);
+}
+
+$("go").onclick=run; $("reset").onclick=()=>{ if(es)es.close(); $("go").disabled=false; $("go").textContent="▶ Run replay"; resetSeries(); };
+window.addEventListener("resize",draw);
+loadRuns().then(draw);
+</script>
+</body>
+</html>

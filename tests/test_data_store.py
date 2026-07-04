@@ -125,3 +125,11 @@ def test_data_survives_reopen(tmp_path):
     assert s2.get_machine("phm2010") is not None
     assert s2.get_cut("c1", 1).waveform_key == "k"
     s2.close()
+
+
+def test_list_runs_most_recent_first(store):
+    store.create_machine(Machine("phm2010", "phm2010_milling"))
+    store.create_run(Run("c1", "phm2010"))
+    store.create_run(Run("c4", "phm2010"))
+    ids = [r.run_id for r in store.list_runs("phm2010")]
+    assert set(ids) == {"c1", "c4"} and len(ids) == 2

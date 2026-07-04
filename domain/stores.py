@@ -68,6 +68,11 @@ class DataStore(ABC):
         ...
 
     @abstractmethod
+    def list_runs(self, machine_id: str) -> list[Run]:
+        """All runs for a machine, most recent first."""
+        ...
+
+    @abstractmethod
     def end_run(self, run_id: str, ended_at: datetime) -> None:
         """Mark a run finished (tool change). Used at M10."""
         ...
