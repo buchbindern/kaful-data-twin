@@ -17,14 +17,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import io
 import json
-from fastapi import FastAPI, Request, HTTPException
+from datetime import datetime, timezone
+
+import numpy as np
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
 from storage import SQLiteDataStore, object_store_from_env
 from features import FeatureExtractor
 from datasets import PHM_CHANNELS
+from domain.models import Machine, Run, Cut, FeatureRecord
 from ingest import IngestHandler
 from twin import ParticleTwin, start_new_run, deploy_from_reference
 
@@ -122,6 +127,43 @@ def create_app(store_dir: str = "var") -> FastAPI:
             out.append({"run_id": r.run_id, "active": r.ended_at is None,
                         "n_cuts": n_cuts, "has_labels": n_labels > 0})
         return {"machine_id": machine_id, "runs": out}
+
+    @app.post("/analyze")
+    async def analyze(files: list[UploadFile] = File(...), reference: str = "c1"):
+        """Upload cut files -> extract features -> create a run -> deploy the reference
+        model. Returns a run_id the dashboard then streams via /replay."""
+        if not files:
+            raise HTTPException(status_code=400, detail="no files uploaded")
+        if data_store.get_run(reference) is None or not data_store.read_wear_labels(reference):
+            raise HTTPException(status_code=400,
+                                detail=f"reference model {reference!r} not available (needs a labeled run)")
+        if len(files) > 400:
+            raise HTTPException(status_code=400, detail="too many files (max 400 cuts per upload)")
+
+        if data_store.get_machine("uploads") is None:
+            data_store.create_machine(Machine("uploads", "cnc_milling", name="Uploaded tools"))
+        run_id = "upload-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        data_store.create_run(Run(run_id, "uploads"))
+
+        extractor = FeatureExtractor(PHM_CHANNELS)
+        ordered = sorted(files, key=lambda f: f.filename or "")
+        n = 0
+        for i, uf in enumerate(ordered, start=1):
+            content = await uf.read()
+            try:
+                arr = np.loadtxt(io.StringIO(content.decode("utf-8", "ignore")), delimiter=",")
+            except Exception:
+                raise HTTPException(status_code=400,
+                                    detail=f"could not parse {uf.filename!r}: expected a headerless CSV")
+            if arr.ndim != 2 or arr.shape[1] != len(PHM_CHANNELS):
+                raise HTTPException(status_code=400,
+                                    detail=f"{uf.filename!r}: expected {len(PHM_CHANNELS)} columns, got shape {arr.shape}")
+            data_store.append_cut(Cut(run_id, i, f"upload/{run_id}/{i:06d}"))
+            data_store.append_features(FeatureRecord(run_id, i, extractor.extract(arr)))
+            n += 1
+
+        data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
+        return {"run_id": run_id, "machine_id": "uploads", "n_cuts": n, "reference": reference}
 
     @app.get("/machines/{machine_id}/runs/{run_id}/replay")
     def replay(machine_id: str, run_id: str, reference: str | None = None,
