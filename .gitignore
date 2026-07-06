@@ -11,4 +11,4 @@ raw/
 build/
 var/
 .env.r2
-.env.r2
+!deploy/kaful.db

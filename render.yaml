@@ -1,0 +1,24 @@
+# Render Blueprint — deploys the Kaful monitor as a native Python web service.
+# Secrets (R2 credentials) are set in the Render dashboard, not committed here.
+services:
+  - type: web
+    name: kaful-monitor
+    runtime: python
+    plan: free
+    buildCommand: pip install -e ".[s3]"
+    startCommand: python scripts/serve.py --store-dir deploy
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: KAFUL_OBJECT_STORE
+        value: s3
+      - key: KAFUL_S3_REGION
+        value: auto
+      - key: KAFUL_S3_BUCKET
+        sync: false        # set in dashboard
+      - key: KAFUL_S3_ENDPOINT_URL
+        sync: false        # set in dashboard
+      - key: AWS_ACCESS_KEY_ID
+        sync: false        # set in dashboard
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false        # set in dashboard
