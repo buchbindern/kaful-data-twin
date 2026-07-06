@@ -170,6 +170,11 @@ class SQLiteDataStore(DataStore):
         ).fetchall()
         return [self._row_to_run(r) for r in rows]
 
+    def list_machines(self):
+        rows = self._conn.execute("SELECT * FROM machines ORDER BY machine_id").fetchall()
+        return [Machine(r["machine_id"], r["machine_type"], r["name"], _parse_dt(r["created_at"]))
+                for r in rows]
+
     # ---------------- Cut ----------------
     def append_cut(self, cut: Cut) -> None:
         self._conn.execute(

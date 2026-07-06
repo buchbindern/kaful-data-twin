@@ -10,3 +10,5 @@ raw/
 .pytest_cache/
 build/
 var/
+.env.r2
+.env.r2

@@ -22,7 +22,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
-from storage import SQLiteDataStore, FilesystemObjectStore
+from storage import SQLiteDataStore, object_store_from_env
 from features import FeatureExtractor
 from datasets import PHM_CHANNELS
 from ingest import IngestHandler
@@ -40,7 +40,7 @@ def create_app(store_dir: str = "var") -> FastAPI:
     store_dir = Path(store_dir)
 
     data_store = SQLiteDataStore(store_dir / "kaful.db")
-    object_store = FilesystemObjectStore(store_dir / "object_store")
+    object_store = object_store_from_env(store_dir)
     twin = ParticleTwin(data_store)            # uses the calibrated sigma_scale default
     handler = IngestHandler(data_store, object_store, FeatureExtractor(PHM_CHANNELS), twin)
 
@@ -98,6 +98,19 @@ def create_app(store_dir: str = "var") -> FastAPI:
     @app.get("/")
     def dashboard():
         return FileResponse(_STATIC / "index.html")
+
+    @app.get("/runs")
+    def all_runs():
+        """Every run across all machines, for the monitor's tool rail."""
+        out = []
+        for m in data_store.list_machines():
+            for r in data_store.list_runs(m.machine_id):
+                n_cuts = len(data_store.read_all_features(r.run_id))
+                n_labels = len(data_store.read_wear_labels(r.run_id))
+                out.append({"machine_id": m.machine_id, "machine_type": m.machine_type,
+                            "run_id": r.run_id, "active": r.ended_at is None,
+                            "n_cuts": n_cuts, "has_labels": n_labels > 0})
+        return {"runs": out}
 
     @app.get("/machines/{machine_id}/runs")
     def list_runs(machine_id: str):

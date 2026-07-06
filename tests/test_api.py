@@ -89,10 +89,17 @@ def test_start_run_bad_reference_is_400(client):
 
 def test_root_serves_dashboard(client):
     r = client.get("/")
-    assert r.status_code == 200 and "KAFUL" in r.text
+    assert r.status_code == 200 and "Tool Condition Monitoring" in r.text
 
 def test_runs_list_endpoint(client):
     r = client.get("/machines/phm2010/runs")
     assert r.status_code == 200
     runs = r.json()["runs"]
     assert any(x["run_id"] == "c1" and x["has_labels"] for x in runs)
+
+
+def test_all_runs_endpoint(client):
+    r = client.get("/runs")
+    assert r.status_code == 200
+    runs = r.json()["runs"]
+    assert any(x["run_id"] == "c1" and x["machine_id"] == "phm2010" for x in runs)

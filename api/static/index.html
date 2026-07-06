@@ -3,218 +3,329 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Kaful · tool-wear prognostics</title>
+<title>Kaful · Tool Condition Monitoring</title>
 <style>
   :root{
-    --bg:#0a0e14; --panel:#10161f; --line:#1d2735; --grid:#161e29;
-    --sig:#35d0c0; --sig-dim:rgba(53,208,192,.14);
-    --truth:#e6edf3; --rul:#e8b13b; --rul-dim:rgba(232,177,59,.12);
-    --danger:#ff5d5d; --text:#c9d6e5; --dim:#5b6b7f;
+    --bg:#f5f7fa; --surface:#ffffff; --surface-2:#fafbfd; --border:#e5e9f0;
+    --ink:#141b2b; --sub:#586475; --muted:#98a3b3;
+    --brand:#0f766e; --signal:#0d9488; --signal-fill:rgba(13,148,136,.13);
+    --rul:#b45309; --rul-fill:rgba(180,83,9,.11); --danger:#dc2626;
+    --ok:#059669; --ok-bg:#ecfdf5; --warn:#b45309; --warn-bg:#fffbeb;
+    --crit:#dc2626; --crit-bg:#fef2f2; --info:#0f766e; --info-bg:#f0fdfa;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans)}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
   body{display:flex;flex-direction:column;min-height:100vh}
-  header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-  .brand{font-weight:650;letter-spacing:.08em;font-size:14px}
-  .brand b{color:var(--sig)}
-  .brand span{color:var(--dim);font-weight:400;margin-left:10px;letter-spacing:.02em}
-  header .controls{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  label.ctl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;display:flex;flex-direction:column;gap:4px}
-  select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:13px}
-  button{background:var(--sig);color:#04120f;border:0;border-radius:6px;padding:9px 18px;font-weight:650;font-family:var(--sans);cursor:pointer;letter-spacing:.02em}
-  button:disabled{opacity:.4;cursor:default}
-  button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
-  .readouts{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
-  .ro{background:var(--bg);padding:14px 22px}
-  .ro .k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.12em}
-  .ro .v{font-family:var(--mono);font-size:26px;margin-top:5px;font-variant-numeric:tabular-nums}
-  .ro .u{font-size:13px;color:var(--dim);margin-left:4px}
-  .ro.rul .v{color:var(--rul)} .ro.wear .v{color:var(--sig)}
-  .badge{display:inline-block;font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
-  .badge.hot{color:var(--sig);border-color:var(--sig)}
-  main{flex:1;display:flex;flex-direction:column;gap:14px;padding:18px 22px}
-  .plot{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px 6px}
-  .plot .cap{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
-  .plot .cap .t{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
-  .plot .cap .legend{font-family:var(--mono);font-size:11px;color:var(--dim);display:flex;gap:14px}
-  .plot .cap .legend i{font-style:normal}
-  .plot .cap .legend .s{color:var(--sig)} .plot .cap .legend .tr{color:var(--truth)} .plot .cap .legend .th{color:var(--danger)} .plot .cap .legend .r{color:var(--rul)}
-  #wearWrap{flex:1.6} #rulWrap{flex:1}
+  .lbl{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* top bar */
+  header{display:flex;align-items:center;gap:14px;padding:0 22px;height:56px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:670;font-size:15px;letter-spacing:-.01em}
+  .brand .mark{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--brand),#14b8a6);display:inline-block}
+  .brand small{color:var(--muted);font-weight:500;font-size:13px;letter-spacing:0}
+  header .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+  .live{display:none;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--signal)}
+  .live.on{display:flex}
+  .live .dot{width:8px;height:8px;border-radius:50%;background:var(--signal);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .btn{border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:8px;padding:8px 14px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer}
+  .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .btn:hover{background:var(--surface-2)} .btn.primary:hover{background:#0c6058}
+
+  /* layout */
+  .body{flex:1;display:flex;min-height:0}
+  .rail{width:250px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;overflow:auto}
+  .rail h2{margin:4px 8px 12px;font-size:11px}
+  .tool{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:9px;padding:11px 12px;margin-bottom:3px;cursor:pointer}
+  .tool:hover{background:var(--surface-2)}
+  .tool.sel{background:var(--info-bg);border-color:#cdeae6}
+  .tool .r1{display:flex;align-items:center;gap:8px}
+  .tool .sdot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+  .tool.sel .sdot{background:var(--brand)}
+  .tool .name{font-family:var(--mono);font-weight:650;font-size:14px}
+  .tool .meta{margin-top:3px;margin-left:16px;font-size:11.5px;color:var(--muted)}
+  .rail .divider{height:1px;background:var(--border);margin:12px 8px}
+
+  main{flex:1;min-width:0;overflow:auto;padding:22px 26px}
+  .wrap{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+
+  /* hero */
+  .hero{background:var(--surface);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:22px 24px;display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+  .hero .id .t{font-size:20px;font-weight:680;letter-spacing:-.01em}
+  .hero .id .m{color:var(--sub);font-size:13px;margin-top:3px}
+  .hero .id .model{margin-top:12px;display:flex;align-items:center;gap:7px}
+  .hero .id .model select{border:1px solid var(--border);border-radius:7px;padding:5px 8px;font-family:var(--mono);font-size:12px;background:var(--surface);color:var(--ink)}
+  .hero .rul{margin-left:auto;text-align:right}
+  .hero .rul .big{font-family:var(--mono);font-size:44px;font-weight:600;line-height:1;letter-spacing:-.02em}
+  .hero .rul .big small{font-size:17px;color:var(--muted);font-weight:500;margin-left:6px}
+  .hero .rul .ci{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:7px}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:650;margin-bottom:10px}
+  .pill .pd{width:8px;height:8px;border-radius:50%}
+  .pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.ok .pd{background:var(--ok)}
+  .pill.warn{background:var(--warn-bg);color:var(--warn)} .pill.warn .pd{background:var(--warn)}
+  .pill.crit{background:var(--crit-bg);color:var(--crit)} .pill.crit .pd{background:var(--crit)}
+  .pill.info{background:var(--info-bg);color:var(--info)} .pill.info .pd{background:var(--info)}
+  .hero .metrics{width:100%;display:flex;gap:30px;border-top:1px solid var(--border);padding-top:16px;margin-top:4px}
+  .hero .metrics .k .lbl{margin-bottom:5px} .hero .metrics .k .v{font-family:var(--mono);font-size:17px;font-weight:600}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:16px 18px 8px}
+  .card .cap{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+  .card .cap .legend{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;gap:13px}
+  .card .cap .legend .s{color:var(--signal)} .card .cap .legend .tr{color:var(--sub)} .card .cap .legend .th{color:var(--danger)} .card .cap .legend .r{color:var(--rul)}
   canvas{width:100%;display:block}
-  .foot{padding:8px 22px;border-top:1px solid var(--line);font-size:11px;color:var(--dim);font-family:var(--mono)}
+  .feedcard{padding:16px 18px}
+  .feed{max-height:210px;overflow:auto;margin-top:4px}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13px}
+  th{position:sticky;top:0;background:var(--surface);text-align:right;color:var(--muted);font-weight:600;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:8px 12px;border-bottom:1px solid var(--border)}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:7px 12px;text-align:right;border-bottom:1px solid #f1f4f8;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:0}
+  .st-ok{color:var(--ok)} .st-warn{color:var(--warn)} .st-crit{color:var(--crit)} .st-info{color:var(--info)} .st-mut{color:var(--muted)}
+  .empty{color:var(--muted);text-align:center;padding:60px 0;font-size:14px}
+
+  /* ingest modal */
+  .modal{position:fixed;inset:0;background:rgba(20,27,43,.4);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}
+  .modal.on{display:flex}
+  .sheet{background:var(--surface);border-radius:14px;box-shadow:0 20px 60px rgba(16,24,40,.3);width:100%;max-width:480px;padding:24px}
+  .sheet h3{margin:0 0 4px;font-size:17px}
+  .sheet p{margin:0 0 18px;color:var(--sub);font-size:13.5px}
+  .drop{border:1.5px dashed #c8d2e0;border-radius:11px;padding:34px 20px;text-align:center;cursor:pointer;transition:.15s;background:var(--surface-2)}
+  .drop.hot{border-color:var(--brand);background:var(--info-bg)}
+  .drop .big{font-weight:600;font-size:15px} .drop .sub{color:var(--muted);font-size:12px;margin-top:6px;font-family:var(--mono)}
+  .sheet .row{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .perr{color:var(--danger);font-size:13px;font-family:var(--mono);min-height:18px;margin-top:10px}
+  .hidden{display:none}
 </style>
 </head>
 <body>
   <header>
-    <div class="brand"><b>KAFUL</b> tool-wear prognostics<span>PHM 2010 · particle-filter digital twin</span></div>
-    <div class="controls">
-      <label class="ctl">tool run<select id="run"></select></label>
-      <label class="ctl">model fit on<select id="ref"></select></label>
-      <button id="go">▶ Run replay</button>
-      <button id="reset" class="ghost">Reset</button>
+    <div class="brand"><span class="mark"></span>Kaful <small>Tool Condition Monitoring</small></div>
+    <div class="right">
+      <span class="live" id="live"><span class="dot"></span>Live</span>
+      <button class="btn primary" id="openIngest">+ Ingest run</button>
     </div>
   </header>
 
-  <section class="readouts">
-    <div class="ro"><div class="k">cut</div><div class="v"><span id="ro-cut">—</span><span class="u" id="ro-n"></span></div></div>
-    <div class="ro wear"><div class="k">wear estimate</div><div class="v"><span id="ro-wear">—</span><span class="u">µm</span></div></div>
-    <div class="ro rul"><div class="k">remaining life</div><div class="v"><span id="ro-rul">—</span><span class="u">cuts</span></div></div>
-    <div class="ro"><div class="k">state</div><div class="v" style="font-size:16px;padding-top:6px"><span class="badge" id="ro-state">idle</span></div></div>
-  </section>
+  <div class="body">
+    <aside class="rail">
+      <h2 class="lbl">Tools</h2>
+      <div id="tools"></div>
+    </aside>
 
-  <main>
-    <div class="plot" id="wearWrap">
-      <div class="cap"><span class="t">flank wear · estimate vs ground truth</span>
-        <span class="legend"><i class="s">— estimate</i><i class="s" style="opacity:.5">▨ 90% CI</i><i class="tr">-- measured</i><i class="th">— 0.2mm failure</i></span></div>
-      <canvas id="wear"></canvas>
+    <main>
+      <div class="wrap" id="wrap">
+        <div class="empty" id="empty">Select a tool to begin monitoring.</div>
+
+        <div id="mon" class="hidden">
+          <div class="hero">
+            <div class="id">
+              <div class="t" id="h-tool">—</div>
+              <div class="m" id="h-machine">—</div>
+              <div class="model"><span class="lbl">Model</span>
+                <select id="h-model"><option value="self">self-fit</option></select></div>
+            </div>
+            <div class="rul">
+              <div class="pill" id="h-pill"><span class="pd"></span><span id="h-status">—</span></div>
+              <div class="big"><span id="h-rul">—</span><small>cuts to failure</small></div>
+              <div class="ci" id="h-ci">—</div>
+            </div>
+            <div class="metrics">
+              <div class="k"><div class="lbl">Cut</div><div class="v"><span id="h-cut">—</span></div></div>
+              <div class="k"><div class="lbl">Wear estimate</div><div class="v"><span id="h-wear">—</span> µm</div></div>
+              <div class="k"><div class="lbl">Failure threshold</div><div class="v">200 µm</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="cap"><span class="lbl">Flank wear — recovered from force</span>
+              <span class="legend"><i class="s">— estimate</i><i class="tr">-- measured</i><i class="th">— failure</i></span></div>
+            <canvas id="wear"></canvas>
+          </div>
+          <div class="card">
+            <div class="cap"><span class="lbl">Remaining useful life</span>
+              <span class="legend"><i class="r">— median</i><i class="r" style="opacity:.5">▨ 90% CI</i></span></div>
+            <canvas id="rul"></canvas>
+          </div>
+          <div class="card feedcard">
+            <span class="lbl">Recent cuts</span>
+            <div class="feed"><table>
+              <thead><tr><th>cut</th><th>wear µm</th><th>RUL cuts</th><th>90% interval</th><th>status</th></tr></thead>
+              <tbody id="feed"></tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ingest modal -->
+  <div class="modal" id="modal">
+    <div class="sheet">
+      <h3>Ingest a tool run</h3>
+      <p>Upload cut waveforms (7-channel headerless CSVs, one file per cut). We extract features, deploy the reference model, and begin monitoring.</p>
+      <div class="drop" id="drop">
+        <div class="big">Drop cut files here</div>
+        <div class="sub">or click to browse · max 400 cuts</div>
+        <input id="file" type="file" accept=".csv" multiple class="hidden"/>
+      </div>
+      <div class="perr" id="perr"></div>
+      <div class="row"><button class="btn" id="cancelIngest">Cancel</button></div>
     </div>
-    <div class="plot" id="rulWrap">
-      <div class="cap"><span class="t">remaining useful life · cuts to failure</span>
-        <span class="legend"><i class="r">— median</i><i class="r" style="opacity:.5">▨ 90% CI</i></span></div>
-      <canvas id="rul"></canvas>
-    </div>
-  </main>
-  <div class="foot" id="foot">wear is a hidden state recovered from force alone — labels shown for reference only, never used to run the filter.</div>
+  </div>
 
 <script>
-const MACHINE = "phm2010";
-const THRESH = 200; // µm failure line
-let es = null, N = 0;
-let cuts=[], wm=[], wlo=[], whi=[], wt=[];        // wear series (µm)
-let rc=[], rmed=[], rlo=[], rhi=[];               // rul series (cuts, only where meaningful)
+const THRESH=200;
+let runs=[], cur=null, es=null;
+const $=id=>document.getElementById(id);
 
-const $ = id => document.getElementById(id);
-
-async function loadRuns(){
-  const r = await fetch(`/machines/${MACHINE}/runs`).then(x=>x.json());
-  const runSel = $("run"), refSel = $("ref");
-  runSel.innerHTML = ""; refSel.innerHTML = '<option value="">self (fit on this run)</option>';
-  r.runs.forEach(run=>{
-    const o = document.createElement("option");
-    o.value = run.run_id;
-    o.textContent = `${run.run_id}  ·  ${run.n_cuts} cuts${run.has_labels?"":"  (no labels)"}`;
-    runSel.appendChild(o);
-    if(run.has_labels){
-      const o2 = document.createElement("option"); o2.value = run.run_id; o2.textContent = run.run_id;
-      refSel.appendChild(o2);
-    }
+// ---------- runs / rail ----------
+async function loadRuns(selectId){
+  const data=await fetch("/runs").then(r=>r.json());
+  runs=data.runs;
+  const box=$("tools"); box.innerHTML="";
+  const labeled=runs.filter(r=>r.has_labels), uploads=runs.filter(r=>!r.has_labels);
+  const render=list=>list.forEach(r=>{
+    const b=document.createElement("button"); b.className="tool"+(cur&&cur.run_id===r.run_id?" sel":"");
+    b.innerHTML=`<div class="r1"><span class="sdot"></span><span class="name">${r.run_id}</span></div>`+
+      `<div class="meta">${r.machine_id} · ${r.n_cuts} cuts${r.has_labels?"":" · unlabeled"}</div>`;
+    b.onclick=()=>select(r); box.appendChild(b);
   });
+  render(labeled);
+  if(uploads.length){ const d=document.createElement("div"); d.className="divider"; box.appendChild(d);
+    const h=document.createElement("div"); h.className="lbl"; h.style.margin="0 8px 8px"; h.textContent="Uploaded"; box.appendChild(h); render(uploads); }
+  const pick = selectId ? runs.find(r=>r.run_id===selectId) : (cur||labeled[0]||runs[0]);
+  if(pick) select(pick);
 }
 
-function resetSeries(){
-  cuts=[];wm=[];wlo=[];whi=[];wt=[];rc=[];rmed=[];rlo=[];rhi=[];
-  $("ro-cut").textContent="—";$("ro-wear").textContent="—";$("ro-rul").textContent="—";
-  $("ro-state").textContent="idle";$("ro-state").className="badge";
-  draw();
+function modelOptions(run){
+  const sel=$("h-model"); sel.innerHTML="";
+  if(run.has_labels){ sel.add(new Option("self-fit","self")); }
+  runs.filter(r=>r.has_labels).forEach(r=>{ if(r.run_id!==run.run_id||!run.has_labels) sel.add(new Option(`reference: ${r.run_id}`, r.run_id)); });
+  if(!run.has_labels) sel.value = runs.find(r=>r.has_labels&&r.run_id==="c1") ? "c1" : sel.options[0]?.value;
 }
 
-function run(){
-  if(es) es.close();
-  resetSeries();
-  const runId = $("run").value, ref = $("ref").value;
-  const url = `/machines/${MACHINE}/runs/${runId}/replay` + (ref?`?reference=${ref}`:"");
-  $("go").disabled = true; $("go").textContent = "● streaming";
-  es = new EventSource(url);
-  es.onmessage = ev=>{
-    const d = JSON.parse(ev.data);
-    if(d.type==="meta"){ N=d.n; $("ro-n").textContent = "/ "+N;
-      $("foot").textContent = `run ${d.run} · model fit on ${d.reference}${d.reference!==d.run?" (cross-run test)":""} · ${d.n} cuts · failure at ${d.threshold_um} µm`;
-      return; }
-    if(d.type==="done"){ es.close(); $("go").disabled=false; $("go").textContent="▶ Run replay"; return; }
-    // cut event
-    cuts.push(d.cut); wm.push(d.wear_mean); wlo.push(d.wear_lo); whi.push(d.wear_hi); wt.push(d.wear_true);
-    const inWearout = d.censored < 0.5;
-    if(inWearout){ rc.push(d.cut); rmed.push(d.rul_median); rlo.push(d.rul_lo); rhi.push(d.rul_hi); }
-    // readouts
-    $("ro-cut").textContent = d.cut;
-    $("ro-wear").textContent = d.wear_mean.toFixed(0);
-    if(inWearout){ $("ro-rul").textContent = "~"+d.rul_median.toFixed(0);
-      $("ro-state").textContent="wear-out · tracking"; $("ro-state").className="badge hot"; }
-    else { $("ro-rul").textContent = "— warming up"; 
-      $("ro-state").textContent=`pre-wear-out · ${(d.censored*100).toFixed(0)}% censored`; $("ro-state").className="badge"; }
+function select(run){
+  cur=run;
+  document.querySelectorAll(".tool").forEach(t=>t.classList.toggle("sel", t.querySelector(".name").textContent===run.run_id));
+  $("empty").classList.add("hidden"); $("mon").classList.remove("hidden");
+  $("h-tool").textContent="Tool "+run.run_id;
+  $("h-machine").textContent=run.machine_id+" · cnc milling"+(run.active?" · active":"");
+  modelOptions(run);
+  startStream();
+}
+$("h-model").onchange=startStream;
+
+// ---------- streaming ----------
+let cuts=[],wm=[],wlo=[],whi=[],wt=[],rc=[],rmed=[],rlo=[],rhi=[],N=0;
+function resetSeries(){ cuts=[];wm=[];wlo=[];whi=[];wt=[];rc=[];rmed=[];rlo=[];rhi=[];N=0; $("feed").innerHTML=""; }
+function health(wear,rul,cens){
+  if(wear>=190) return {t:"At failure threshold",c:"crit"};
+  if(cens>=0.5) return {t:"Healthy · early life",c:"ok"};
+  if(rul<=20) return {t:"Replace now",c:"crit"};
+  if(rul<=60) return {t:"Replace soon",c:"warn"};
+  return {t:"Monitoring · wear-out",c:"info"};
+}
+function startStream(){
+  if(es) es.close(); resetSeries(); draw();
+  const model=$("h-model").value;
+  const ref = model==="self" ? null : model;
+  const url=`/machines/${cur.machine_id}/runs/${cur.run_id}/replay`+(ref?`?reference=${ref}`:"");
+  $("live").classList.add("on");
+  es=new EventSource(url);
+  es.onmessage=ev=>{
+    const d=JSON.parse(ev.data);
+    if(d.type==="meta"){ N=d.n; draw(); return; }
+    if(d.type==="done"){ es.close(); $("live").classList.remove("on"); return; }
+    cuts.push(d.cut);wm.push(d.wear_mean);wlo.push(d.wear_lo);whi.push(d.wear_hi);wt.push(d.wear_true);
+    const wearout=d.censored<0.5;
+    if(wearout){ rc.push(d.cut);rmed.push(d.rul_median);rlo.push(d.rul_lo);rhi.push(d.rul_hi); }
+    const hs=health(d.wear_mean,wearout?d.rul_median:999,d.censored);
+    $("h-cut").textContent=`${d.cut} / ${N}`;
+    $("h-wear").textContent=d.wear_mean.toFixed(0);
+    $("h-pill").className="pill "+hs.c; $("h-status").textContent=hs.t;
+    if(wearout){ $("h-rul").textContent="~"+d.rul_median.toFixed(0);
+      $("h-ci").textContent=`90% CI  ${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)} cuts`; }
+    else{ $("h-rul").textContent="—"; $("h-ci").textContent=`${(d.censored*100).toFixed(0)}% of futures beyond horizon`; }
+    // feed (newest on top)
+    const cls=hs.c==="ok"?"st-ok":hs.c==="warn"?"st-warn":hs.c==="crit"?"st-crit":"st-info";
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${d.cut}</td><td>${d.wear_mean.toFixed(1)}</td>`+
+      (wearout?`<td>${d.rul_median.toFixed(0)}</td><td>${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)}</td>`
+              :`<td class="st-mut">—</td><td class="st-mut">—</td>`)+
+      `<td class="${cls}">${hs.t.split(" · ")[0]}</td>`;
+    const fb=$("feed"); fb.insertBefore(tr, fb.firstChild);
     draw();
   };
-  es.onerror = ()=>{ es.close(); $("go").disabled=false; $("go").textContent="▶ Run replay"; };
+  es.onerror=()=>{ es.close(); $("live").classList.remove("on"); };
 }
 
-// ---- canvas drawing ----
-function fit(cv){
-  const r = cv.getBoundingClientRect(); const dpr = window.devicePixelRatio||1;
-  cv.width = Math.max(1,r.width*dpr); cv.height = Math.max(1,r.height*dpr);
-  const ctx = cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
-  return {ctx, w:r.width, h:r.height};
-}
-function axes(ctx,w,h,pad,xMax,yMin,yMax,yTicks,yFmt){
-  ctx.font="11px ui-monospace,monospace"; ctx.textBaseline="middle";
-  ctx.strokeStyle="#161e29"; ctx.fillStyle="#5b6b7f"; ctx.lineWidth=1;
-  for(let i=0;i<=yTicks;i++){
-    const yv = yMin+(yMax-yMin)*i/yTicks;
-    const y = h-pad.b-(h-pad.t-pad.b)*(yv-yMin)/(yMax-yMin);
-    ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();
-    ctx.textAlign="right"; ctx.fillText(yFmt(yv),pad.l-8,y);
-  }
-  ctx.textAlign="center";
-  for(let gx=0;gx<=xMax;gx+= Math.max(1,Math.round(xMax/6))){
-    const x = pad.l+(w-pad.l-pad.r)*(gx/Math.max(1,xMax));
-    ctx.fillText(gx, x, h-pad.b+14);
-  }
-}
-const X = (c,pad,w,xMax)=> pad.l+(w-pad.l-pad.r)*((c-1)/Math.max(1,xMax-1));
-const Y = (v,pad,h,yMin,yMax)=> h-pad.b-(h-pad.t-pad.b)*(v-yMin)/(yMax-yMin);
-
-function band(ctx,xs,los,his,pad,w,h,xMax,yMin,yMax,fill){
-  if(xs.length<2) return;
-  ctx.beginPath();
-  xs.forEach((c,i)=>{const x=X(c,pad,w,xMax),y=Y(his[i],pad,h,yMin,yMax); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
-  for(let i=xs.length-1;i>=0;i--){const x=X(xs[i],pad,w,xMax),y=Y(los[i],pad,h,yMin,yMax); ctx.lineTo(x,y);}
-  ctx.closePath(); ctx.fillStyle=fill; ctx.fill();
-}
-function line(ctx,xs,ys,pad,w,h,xMax,yMin,yMax,color,dash,width,glow){
-  const pts = xs.map((c,i)=>[c,ys[i]]).filter(p=>p[1]!=null);
-  if(pts.length<1) return;
-  ctx.save(); ctx.setLineDash(dash||[]); ctx.lineWidth=width||2; ctx.strokeStyle=color;
-  if(glow){ctx.shadowColor=color;ctx.shadowBlur=8;}
-  ctx.beginPath();
-  pts.forEach((p,i)=>{const x=X(p[0],pad,w,xMax),y=Y(p[1],pad,h,yMin,yMax); i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
-  ctx.stroke(); ctx.restore();
-}
-function thresholdLine(ctx,val,pad,w,h,yMin,yMax,color,label){
-  const y=Y(val,pad,h,yMin,yMax);
-  ctx.save();ctx.setLineDash([6,5]);ctx.strokeStyle=color;ctx.lineWidth=1.2;
-  ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();
-  ctx.setLineDash([]);ctx.fillStyle=color;ctx.font="11px ui-monospace,monospace";ctx.textAlign="left";ctx.textBaseline="bottom";
-  ctx.fillText(label,pad.l+4,y-3);ctx.restore();
-}
-
-function draw(){
-  drawWear(); drawRul();
-}
-function drawWear(){
-  const {ctx,w,h}=fit($("wear")); const pad={l:44,r:14,t:12,b:22};
-  const xMax=Math.max(N,10), yMin=0, yMax=220;
-  ctx.clearRect(0,0,w,h);
-  axes(ctx,w,h,pad,xMax,yMin,yMax,5,v=>v.toFixed(0));
-  band(ctx,cuts,wlo,whi,pad,w,h,xMax,yMin,yMax,"rgba(53,208,192,.14)");
-  thresholdLine(ctx,THRESH,pad,w,h,yMin,yMax,"#ff5d5d","0.200 mm · ISO 8688 failure");
-  line(ctx,cuts,wt,pad,w,h,xMax,yMin,yMax,"#e6edf3",[5,4],1.4,false);   // truth
-  line(ctx,cuts,wm,pad,w,h,xMax,yMin,yMax,"#35d0c0",[],2.2,true);        // estimate
-}
-function drawRul(){
-  const {ctx,w,h}=fit($("rul")); const pad={l:44,r:14,t:12,b:22};
-  const xMax=Math.max(N,10);
-  let yMax=60; for(const v of rhi) if(v<600) yMax=Math.max(yMax,v);
-  yMax=Math.min(yMax,Math.max(60,Math.ceil(yMax/20)*20));
-  ctx.clearRect(0,0,w,h);
-  axes(ctx,w,h,pad,xMax,0,yMax,4,v=>v.toFixed(0));
-  band(ctx,rc,rlo.map(v=>Math.min(v,yMax)),rhi.map(v=>Math.min(v,yMax)),pad,w,h,xMax,0,yMax,"rgba(232,177,59,.12)");
-  line(ctx,rc,rmed,pad,w,h,xMax,0,yMax,"#e8b13b",[],2.2,true);
-}
-
-$("go").onclick=run; $("reset").onclick=()=>{ if(es)es.close(); $("go").disabled=false; $("go").textContent="▶ Run replay"; resetSeries(); };
+// ---------- charts ----------
+function fit(cv){const r=cv.getBoundingClientRect();const dpr=window.devicePixelRatio||1;
+  cv.width=Math.max(1,r.width*dpr);cv.height=Math.max(1,r.height*dpr);
+  const ctx=cv.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w:r.width,h:r.height};}
+const X=(c,p,w,xm)=>p.l+(w-p.l-p.r)*((c-1)/Math.max(1,xm-1));
+const Y=(v,p,h,y0,y1)=>h-p.b-(h-p.t-p.b)*(v-y0)/(y1-y0);
+function axes(ctx,w,h,p,xm,y0,y1,ty,fmt){ctx.font="11px "+getComputedStyle(document.body).getPropertyValue('--mono');ctx.textBaseline="middle";
+  ctx.strokeStyle="#eef1f6";ctx.fillStyle="#98a3b3";ctx.lineWidth=1;
+  for(let i=0;i<=ty;i++){const yv=y0+(y1-y0)*i/ty,y=Y(yv,p,h,y0,y1);
+    ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(w-p.r,y);ctx.stroke();ctx.textAlign="right";ctx.fillText(fmt(yv),p.l-8,y);}
+  ctx.textAlign="center";const step=Math.max(1,Math.round(xm/6));
+  for(let gx=0;gx<=xm;gx+=step){const x=p.l+(w-p.l-p.r)*(gx/Math.max(1,xm));ctx.fillText(gx,x,h-p.b+14);}}
+function bandp(ctx,xs,lo,hi,p,w,h,xm,y0,y1,fill){if(xs.length<2)return;ctx.beginPath();
+  xs.forEach((c,i)=>{const x=X(c,p,w,xm),y=Y(hi[i],p,h,y0,y1);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  for(let i=xs.length-1;i>=0;i--){ctx.lineTo(X(xs[i],p,w,xm),Y(lo[i],p,h,y0,y1));}
+  ctx.closePath();ctx.fillStyle=fill;ctx.fill();}
+function linep(ctx,xs,ys,p,w,h,xm,y0,y1,color,dash,width){
+  const pts=xs.map((c,i)=>[c,ys[i]]).filter(q=>q[1]!=null);if(!pts.length)return;
+  ctx.save();ctx.setLineDash(dash||[]);ctx.lineWidth=width||2;ctx.strokeStyle=color;ctx.lineJoin="round";
+  ctx.beginPath();pts.forEach((q,i)=>{const x=X(q[0],p,w,xm),y=Y(q[1],p,h,y0,y1);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.stroke();ctx.restore();}
+function thline(ctx,val,p,w,h,y0,y1,color,label){const y=Y(val,p,h,y0,y1);
+  ctx.save();ctx.setLineDash([6,5]);ctx.strokeStyle=color;ctx.lineWidth=1.3;
+  ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(w-p.r,y);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=color;ctx.textAlign="left";ctx.textBaseline="bottom";ctx.font="11px "+getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.fillText(label,p.l+4,y-3);ctx.restore();}
+function draw(){ if($("mon").classList.contains("hidden"))return; drawWear(); drawRul(); }
+function drawWear(){const {ctx,w,h}=fit($("wear"));const p={l:46,r:14,t:12,b:22},xm=Math.max(N,10);
+  ctx.clearRect(0,0,w,h);axes(ctx,w,h,p,xm,0,220,5,v=>v.toFixed(0));
+  bandp(ctx,cuts,wlo,whi,p,w,h,xm,0,220,"rgba(13,148,136,.13)");
+  thline(ctx,THRESH,p,w,h,0,220,"#dc2626","0.200 mm failure");
+  linep(ctx,cuts,wt,p,w,h,xm,0,220,"#586475",[5,4],1.4);
+  linep(ctx,cuts,wm,p,w,h,xm,0,220,"#0d9488",[],2.4);}
+function drawRul(){const {ctx,w,h}=fit($("rul"));const p={l:46,r:14,t:12,b:22},xm=Math.max(N,10);
+  let ym=60;for(const v of rhi)if(v<600)ym=Math.max(ym,v);ym=Math.max(60,Math.ceil(ym/20)*20);
+  ctx.clearRect(0,0,w,h);axes(ctx,w,h,p,xm,0,ym,4,v=>v.toFixed(0));
+  bandp(ctx,rc,rlo.map(v=>Math.min(v,ym)),rhi.map(v=>Math.min(v,ym)),p,w,h,xm,0,ym,"rgba(180,83,9,.11)");
+  linep(ctx,rc,rmed,p,w,h,xm,0,ym,"#b45309",[],2.4);}
 window.addEventListener("resize",draw);
-loadRuns().then(draw);
+
+// ---------- ingest modal ----------
+const modal=$("modal"),drop=$("drop"),file=$("file");
+$("openIngest").onclick=()=>{ $("perr").textContent=""; modal.classList.add("on"); };
+$("cancelIngest").onclick=()=>modal.classList.remove("on");
+modal.onclick=e=>{ if(e.target===modal) modal.classList.remove("on"); };
+drop.onclick=()=>file.click();
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hot");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
+drop.addEventListener("drop",e=>{ if(e.dataTransfer.files.length) upload(e.dataTransfer.files); });
+file.onchange=()=>{ if(file.files.length) upload(file.files); };
+async function upload(list){
+  $("perr").textContent=`uploading ${list.length} cut${list.length>1?"s":""}…`;
+  const fd=new FormData(); [...list].forEach(f=>fd.append("files",f));
+  try{
+    const res=await fetch("/analyze",{method:"POST",body:fd});
+    if(!res.ok){ const j=await res.json().catch(()=>({detail:res.statusText})); throw new Error(j.detail||"failed"); }
+    const d=await res.json();
+    modal.classList.remove("on"); file.value="";
+    await loadRuns(d.run_id);
+  }catch(err){ $("perr").textContent=err.message; }
+}
+
+loadRuns();
 </script>
 </body>
 </html>
