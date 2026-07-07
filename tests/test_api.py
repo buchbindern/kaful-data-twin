@@ -23,7 +23,7 @@ def _seed_store_with_twin(store_dir, n=200):
         wear = 0.05 + 0.12 * (cut / n) ** 2.5
         fz = 1521 * wear ** 2.0 + RNG.normal(0, 2.0)
         ds.append_cut(Cut("c1", cut, f"k{cut}"))
-        ds.append_features(FeatureRecord("c1", cut, {"force_z_rms": fz}))
+        ds.append_features(FeatureRecord("c1", cut, {"force_z_rms": fz, "vibration_x_mean_abs": fz}))
         ds.append_wear_label(WearLabel("c1", cut, wear))
     ds.save_twin_state(build_twin(ds, "c1", n_particles=1000))
     ds.close()

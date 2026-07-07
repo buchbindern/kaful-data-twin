@@ -18,7 +18,7 @@ def _reference_store(tmp_path, run_id="c1", n=200):
         wear = 0.05 + 0.12 * (cut / n) ** 2.5
         fz = 1521 * wear ** 2.0 + rng.normal(0, 2.0)
         ds.append_cut(Cut(run_id, cut, f"k{cut}"))
-        ds.append_features(FeatureRecord(run_id, cut, {"force_z_rms": fz}))
+        ds.append_features(FeatureRecord(run_id, cut, {"force_z_rms": fz, "vibration_x_mean_abs": fz}))
         ds.append_wear_label(WearLabel(run_id, cut, wear))
     return ds
 
@@ -63,4 +63,41 @@ def test_start_new_run_rejects_duplicate(tmp_path):
     ds = _reference_store(tmp_path)
     with pytest.raises(ValueError):
         start_new_run(ds, "phm2010", "c1", reference_run_id="c1")
+    ds.close()
+
+
+def test_few_shot_calibration_fits_targets_own_map(tmp_path):
+    """deploy_with_measurements should fit the TARGET tool's own observation map from a
+    few measurements, not reuse the reference's map."""
+    ds = SQLiteDataStore(tmp_path / "kaful.db")
+    ds.create_machine(Machine("phm2010", "phm2010_milling"))
+    # reference c1: map feat = 1000 * w^2.0 ; target c9: DIFFERENT map feat = 500 * w^1.4
+    rng = np.random.default_rng(0)
+    ds.create_run(Run("c1", "phm2010"))
+    for cut in range(1, 201):
+        w = 0.05 + 0.13 * (cut / 200) ** 2.5
+        ds.append_cut(Cut("c1", cut, f"c1/{cut}"))
+        ds.append_features(FeatureRecord("c1", cut, {"vibration_x_mean_abs": 1000 * w ** 2.0}))
+        ds.append_wear_label(WearLabel("c1", cut, w))
+    ds.create_run(Run("c9", "phm2010"))
+    target_wear = {}
+    for cut in range(1, 201):
+        w = 0.05 + 0.13 * (cut / 200) ** 2.5
+        ds.append_cut(Cut("c9", cut, f"c9/{cut}"))
+        ds.append_features(FeatureRecord("c9", cut, {"vibration_x_mean_abs": 500 * w ** 1.4}))
+        target_wear[cut] = w
+    # provide ~10 evenly-spaced measurements on c9
+    meas = {c: target_wear[c] for c in range(20, 201, 20)}
+    from twin import deploy_with_measurements, models_from_state
+    state = deploy_with_measurements(ds, "c9", meas, reference_run_id="c1", n_particles=500)
+    _, obs = models_from_state(state)
+    assert obs.k == pytest.approx(1.4, abs=0.25)          # recovered c9's own shape, not c1's 2.0
+    assert state.params["calibrated_from"].endswith("on c9")
+    ds.close()
+
+def test_few_shot_needs_enough_measurements(tmp_path):
+    ds = _reference_store(tmp_path)
+    from twin import deploy_with_measurements
+    with pytest.raises(ValueError):
+        deploy_with_measurements(ds, "c1", {1: 0.05, 2: 0.06}, reference_run_id="c1")  # too few
     ds.close()

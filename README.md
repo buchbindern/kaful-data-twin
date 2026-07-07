@@ -52,9 +52,9 @@ given the current wear, it predicts the next cut's wear. Parameters `(a, p)` are
 from a reference tool's wear trajectory.
 
 **Observation model** — how wear shows up in the sensors. Thrust force relates to
-wear as `force = f0 + c·wᵏ`; `force_z_rms` is the strongest single wear indicator
-(correlation ≈ 0.97 with measured wear). This maps a noisy force reading to a
-likelihood over wear.
+wear as `signal = f0 + c·wᵏ`. Of 42 candidate features, `vibration_x_mean_abs` is
+both an excellent within-tool indicator and the most *transferable* across tools
+(see `TRANSFER-FINDINGS.md`). This maps a noisy sensor reading to a likelihood over wear.
 
 **Particle filter** — recovers the hidden wear. The wear estimate is carried as a
 cloud of ~2000 weighted particles. Each cut: (1) *predict* — advance every particle
@@ -79,23 +79,27 @@ interval is calibrated to **90% coverage at no accuracy cost**.
 
 Wear estimation scored against measured labels (non-circular):
 
-- On its reference tool (c1), the filter recovers hidden wear to **6.3 µm RMSE in
-  the wear-out regime**, with a **calibrated 90% confidence interval (coverage 0.90)**
-  — where a single force reading alone is ambiguous to ±25 µm.
+- On its reference tool (c1), the filter recovers hidden wear to **5.3 µm RMSE in
+  the wear-out regime**, with a **calibrated 90% confidence interval (coverage 0.94)**
+  — where a single sensor reading alone is ambiguous to ±25 µm.
 
 Deploying one tool's fitted model onto a *different* tool (scored against each tool's
 own observed failure):
 
 | model → tool | wear-out RMSE | 90% CI coverage | tool failed at |
 |---|--:|--:|--:|
-| c1 → c1 (self) | 6.3 µm | 0.90 | — |
-| c1 → c4 | 23.2 µm | 0.16 | cut 313 |
-| c1 → c6 | 33.5 µm | 0.00 | cut 291 |
+| c1 → c1 (self) | 5.3 µm | 0.94 | — |
+| c1 → c4 | 16.4 µm | 0.32 | cut 313 |
+| c1 → c6 | 20.9 µm | 0.10 | cut 291 |
 
-Different tools wear on different schedules (c1's wear-out begins at cut 81; c4/c6 at
-cuts 162/154), so a model with one tool's fixed degradation rate mistimes another's
-wear-out. The system is accurate and calibrated in the wear-out regime of a tool it
-has been fit to; per-tool rate adaptation is required to generalize across tools.
+Transfer degrades because the **wear→signal map is tool-specific in shape** and is
+not identifiable from signals alone — *not* because of the degradation rate, which
+experiments show is irrelevant to transfer (`TRANSFER-FINDINGS.md`). The consequence is
+a two-mode deployment: an **unlabeled** new tool runs the reference model with honest,
+wide uncertainty (best-effort ~16–21 µm); a tool with **~15–20 periodic wear
+measurements** calibrates its own map via `deploy_with_measurements(...)` and recovers
+accurate, tight RUL. The unlabeled ceiling is information-theoretic, and the system is
+built to be accurate where it can be and honestly wide where it must be.
 
 ## The system
 

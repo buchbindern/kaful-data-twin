@@ -30,7 +30,7 @@ def _synthetic_reference_store(tmp_path, n=200):
         wear = 0.05 + 0.12 * (cut / n) ** 2.5              # accelerating wear-out
         fz = 1521 * wear ** 2.0 + rng.normal(0, 2.0)       # obs power law + noise
         ds.append_cut(Cut("c1", cut, f"k{cut}"))
-        ds.append_features(FeatureRecord("c1", cut, {"force_z_rms": fz}))
+        ds.append_features(FeatureRecord("c1", cut, {"force_z_rms": fz, "vibration_x_mean_abs": fz}))
         ds.append_wear_label(WearLabel("c1", cut, wear))
     return ds
 

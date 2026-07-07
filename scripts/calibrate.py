@@ -17,14 +17,15 @@ from pathlib import Path
 import numpy as np
 
 from storage import SQLiteDataStore
-from twin import (build_twin, models_from_state, ParticleCloud, filter_step, PowerLawWear)
+from twin import (build_twin, models_from_state, ParticleCloud, filter_step,
+                  PowerLawWear, DEFAULT_FEATURE)
 from evaluation import coverage, rmse
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--record", default="c1")
-    ap.add_argument("--feature", default="force_z_rms")
+    ap.add_argument("--feature", default=DEFAULT_FEATURE)
     ap.add_argument("--process-noise", type=float, default=0.002)
     ap.add_argument("--n-particles", type=int, default=2000)
     ap.add_argument("--scales", default="1,1.5,2,2.5,3,4")

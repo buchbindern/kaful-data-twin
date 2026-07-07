@@ -16,13 +16,13 @@ from pathlib import Path
 import numpy as np
 
 from storage import SQLiteDataStore
-from twin import build_twin, ParticleTwin
+from twin import build_twin, ParticleTwin, DEFAULT_FEATURE
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--record", default="c1")
-    ap.add_argument("--feature", default="force_z_rms")
+    ap.add_argument("--feature", default=DEFAULT_FEATURE)
     ap.add_argument("--process-noise", type=float, default=0.002)
     ap.add_argument("--sigma-scale", type=float, default=2.5)
     ap.add_argument("--n-particles", type=int, default=2000)

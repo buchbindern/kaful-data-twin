@@ -42,7 +42,7 @@ def _synthetic_store(tmp_path, n=200):
         wear = 0.05 + 0.12 * (cut / n) ** 2.5
         fz = 1521 * wear ** 2.0 + rng.normal(0, 2.0)
         ds.append_cut(Cut("c1", cut, f"k{cut}"))
-        ds.append_features(FeatureRecord("c1", cut, {"force_z_rms": fz}))
+        ds.append_features(FeatureRecord("c1", cut, {"force_z_rms": fz, "vibration_x_mean_abs": fz}))
         ds.append_wear_label(WearLabel("c1", cut, wear))
     return ds
 
@@ -50,7 +50,7 @@ def test_particle_twin_update_persists_state_and_returns_rul(tmp_path):
     ds = _synthetic_store(tmp_path)
     ds.save_twin_state(build_twin(ds, "c1", n_particles=1000))
     twin = ParticleTwin(ds, process_noise=0.002)
-    rul = twin.update("c1", 1, {"force_z_rms": 6.0})
+    rul = twin.update("c1", 1, {"force_z_rms": 6.0, "vibration_x_mean_abs": 6.0})
     assert isinstance(rul, RULPrediction) and rul.cut_index == 1
     assert ds.load_twin_state("c1").cut_index == 1
     assert twin.last_wear_mean is not None

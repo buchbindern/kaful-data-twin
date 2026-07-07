@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from storage import SQLiteDataStore
-from twin import build_twin, deploy_from_reference, ParticleTwin, PowerLawWear
+from twin import build_twin, deploy_from_reference, ParticleTwin, PowerLawWear, DEFAULT_FEATURE
 from evaluation import rmse, mae, coverage, alpha_lambda_accuracy, prognostic_horizon
 
 THRESHOLD = 0.200
@@ -29,7 +29,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--record", default="c1", help="run to score (features + labels)")
     ap.add_argument("--reference", default=None, help="run to fit the twin on (default: --record)")
-    ap.add_argument("--feature", default="force_z_rms")
+    ap.add_argument("--feature", default=DEFAULT_FEATURE)
     ap.add_argument("--process-noise", type=float, default=0.002)
     ap.add_argument("--sigma-scale", type=float, default=2.5)
     ap.add_argument("--n-particles", type=int, default=2000)
