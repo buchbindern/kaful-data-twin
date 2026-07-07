@@ -67,6 +67,8 @@ def main() -> None:
 
     C, WE, WLO, WHI, RM, RLO, RHI, CEN = ([] for _ in range(8))
     for f in ds.read_all_features(args.record):
+        if f.cut_index not in labels:
+            continue  # score only labeled cuts (in a live run, labels can lag features)
         rul = twin.update(args.record, f.cut_index, f.features)
         ds.append_rul(rul)
         C.append(f.cut_index); WE.append(twin.last_wear_mean)

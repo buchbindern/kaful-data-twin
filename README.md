@@ -7,8 +7,8 @@ prediction — and serves it through a live tool-condition monitoring console.
 Validated on the [PHM 2010 milling dataset](https://www.kaggle.com/datasets/rabahba/phm-data-challenge-2010)
 (labeled tools c1/c4/c6).
 
-<!-- Live demo: https://<your-service>.onrender.com -->
-<!-- ![monitor](docs/monitor.png) -->
+**[▶ Live demo](https://YOUR-SERVICE.onrender.com)**
+![Kaful monitor](docs/monitor.png)
 
 ## What it does
 
