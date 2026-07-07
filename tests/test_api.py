@@ -39,17 +39,26 @@ def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200 and r.json()["status"] == "ok"
 
+def _live_run(client, run_id="live-tool"):
+    r = client.post("/machines/phm2010/runs",
+                    json={"run_id": run_id, "reference_run_id": "c1"})
+    assert r.status_code == 200
+    return run_id
+
+
 def test_post_cut_returns_rul(client):
+    run = _live_run(client)
     wf = RNG.standard_normal((1000, 7))
-    r = client.post("/machines/phm2010/runs/c1/cuts", content=encode_waveform(wf))
+    r = client.post(f"/machines/phm2010/runs/{run}/cuts", content=encode_waveform(wf))
     assert r.status_code == 200
     body = r.json()
     assert "rul_median" in body and body["rul_lower"] <= body["rul_median"] <= body["rul_upper"]
 
 def test_posted_cut_appears_in_rul_timeseries(client):
+    run = _live_run(client)
     wf = RNG.standard_normal((1000, 7))
-    client.post("/machines/phm2010/runs/c1/cuts", content=encode_waveform(wf))
-    r = client.get("/machines/phm2010/runs/c1/rul")
+    client.post(f"/machines/phm2010/runs/{run}/cuts", content=encode_waveform(wf))
+    r = client.get(f"/machines/phm2010/runs/{run}/rul")
     assert r.status_code == 200 and r.json()["n"] >= 1
 
 def test_empty_body_is_400(client):
@@ -103,3 +112,53 @@ def test_all_runs_endpoint(client):
     assert r.status_code == 200
     runs = r.json()["runs"]
     assert any(x["run_id"] == "c1" and x["machine_id"] == "phm2010" for x in runs)
+
+
+def test_ingest_rejects_labeled_reference_run(client):
+    wf = encode_waveform(RNG.standard_normal((500, 7)))
+    r = client.post("/machines/phm2010/runs/c1/cuts", content=wf)
+    assert r.status_code == 409
+
+def test_ingest_rejects_ended_run(client):
+    client.post("/machines/phm2010/runs", json={"run_id": "r-old", "reference_run_id": "c1"})
+    client.post("/machines/phm2010/runs", json={"run_id": "r-new", "reference_run_id": "c1"})
+    wf = encode_waveform(RNG.standard_normal((500, 7)))
+    r = client.post("/machines/phm2010/runs/r-old/cuts", content=wf)
+    assert r.status_code == 409
+
+def test_uploads_get_isolated_unique_runs(client):
+    import numpy as np
+    def files():
+        return [("files", (f"c_9_{i:03d}.csv",
+                 "\n".join(",".join(f"{v:.3f}" for v in row)
+                           for row in np.random.default_rng(i).standard_normal((120, 7))),
+                 "text/csv")) for i in range(1, 3)]
+    r1 = client.post("/analyze", files=files()).json()
+    r2 = client.post("/analyze", files=files()).json()
+    assert r1["run_id"] != r2["run_id"] and r1["machine_id"] == "uploads"
+    assert client.get("/machines/phm2010/runs/c1/rul").status_code == 200
+
+
+def test_ingest_rejects_labeled_reference_run(client):
+    wf = encode_waveform(RNG.standard_normal((500, 7)))
+    r = client.post("/machines/phm2010/runs/c1/cuts", content=wf)
+    assert r.status_code == 409
+
+def test_ingest_rejects_ended_run(client):
+    client.post("/machines/phm2010/runs", json={"run_id": "r-old", "reference_run_id": "c1"})
+    client.post("/machines/phm2010/runs", json={"run_id": "r-new", "reference_run_id": "c1"})
+    wf = encode_waveform(RNG.standard_normal((500, 7)))
+    r = client.post("/machines/phm2010/runs/r-old/cuts", content=wf)
+    assert r.status_code == 409
+
+def test_uploads_get_isolated_unique_runs(client):
+    import numpy as np
+    def files():
+        return [("files", (f"c_9_{i:03d}.csv",
+                 "\n".join(",".join(f"{v:.3f}" for v in row)
+                           for row in np.random.default_rng(i).standard_normal((120, 7))),
+                 "text/csv")) for i in range(1, 3)]
+    r1 = client.post("/analyze", files=files()).json()
+    r2 = client.post("/analyze", files=files()).json()
+    assert r1["run_id"] != r2["run_id"] and r1["machine_id"] == "uploads"
+    assert client.get("/machines/phm2010/runs/c1/rul").status_code == 200

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import io
 import json
+import secrets
 from datetime import datetime, timezone
 
 import numpy as np
@@ -76,8 +77,15 @@ def create_app(store_dir: str = "var") -> FastAPI:
         raw = await request.body()                      # the compressed waveform blob
         if not raw:
             raise HTTPException(status_code=400, detail="empty body: expected waveform bytes")
-        if data_store.get_run(run_id) is None:
+        run = data_store.get_run(run_id)
+        if run is None:
             raise HTTPException(status_code=404, detail=f"run {run_id!r} does not exist")
+        if run.ended_at is not None:
+            raise HTTPException(status_code=409,
+                                detail=f"run {run_id!r} is archived (ended) and does not accept new cuts")
+        if data_store.read_wear_labels(run_id):
+            raise HTTPException(status_code=409,
+                                detail=f"run {run_id!r} is a labeled reference run and does not accept live cuts")
         if data_store.load_twin_state(run_id) is None:
             raise HTTPException(status_code=409,
                                 detail=f"no twin built for run {run_id!r}; build_twin first")
@@ -142,7 +150,7 @@ def create_app(store_dir: str = "var") -> FastAPI:
 
         if data_store.get_machine("uploads") is None:
             data_store.create_machine(Machine("uploads", "cnc_milling", name="Uploaded tools"))
-        run_id = "upload-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        run_id = "upload-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
         data_store.create_run(Run(run_id, "uploads"))
 
         extractor = FeatureExtractor(PHM_CHANNELS)
