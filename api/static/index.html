@@ -56,6 +56,10 @@
   .tool.sel{background:var(--info-bg);border-color:#cdeae6}
   .tool .name{font-family:var(--mono);font-weight:650;font-size:13.5px}
   .tool .meta{margin-top:2px;font-size:11px;color:var(--muted)}
+  .tactions{margin:0 0 4px 10px;display:flex;gap:10px}
+  .tactions button{border:0;background:transparent;color:var(--brand);font-size:11px;font-weight:600;padding:1px 2px}
+  .tactions button.del{color:var(--danger)}
+  .tactions button:hover{text-decoration:underline}
   .mempty{margin:2px 0 2px 10px;padding:9px 12px;font-size:12px;color:var(--muted)}
   .rail .spacer{flex:1}
   .newm{border:1px dashed var(--border);background:transparent;color:var(--sub);border-radius:9px;padding:11px;font-size:13px;font-weight:600;width:100%}
@@ -271,21 +275,33 @@ async function loadRail(selectRun){
     head.innerHTML=`<span>${m.name||m.machine_id}</span>`+
       (m.is_system?`<span class="badge">demo</span>`:``);
     if(!m.is_system && me){
+      const nt=document.createElement("button"); nt.className="stream"; nt.textContent="+ tool";
+      nt.title="add a new tool to this machine"; nt.onclick=()=>newTool(m.machine_id); head.appendChild(nt);
       const rn=document.createElement("button"); rn.className="stream"; rn.textContent="rename";
       rn.onclick=()=>renameMachine(m); head.appendChild(rn);
-      const b=document.createElement("button"); b.className="stream"; b.textContent="+ add cuts";
-      b.onclick=()=>openIngest(m.machine_id); head.appendChild(b);
+      const dl=document.createElement("button"); dl.className="stream"; dl.style.color="var(--danger)";
+      dl.textContent="delete"; dl.onclick=()=>deleteMachine(m); head.appendChild(dl);
     }
     g.appendChild(head);
     if(mine.length===0){
       const e=document.createElement("div"); e.className="mempty";
-      e.textContent = m.is_system ? "no runs" : "no runs yet — stream one";
+      e.textContent = m.is_system ? "no tools" : "no tools yet — add one";
       g.appendChild(e);
     }
     for(const r of mine){
       const b=document.createElement("button"); b.className="tool"+(cur&&cur.run_id===r.run_id?" sel":"");
-      b.innerHTML=`<div class="name">${r.run_id}</div><div class="meta">${r.n_cuts} cuts${r.has_labels?"":" · unlabeled"}</div>`;
+      b.innerHTML=`<div class="name">${r.label||r.run_id}</div><div class="meta">${r.n_cuts} cuts${r.has_labels?"":" · unlabeled"}</div>`;
       b.onclick=()=>select(r); g.appendChild(b);
+      if(!m.is_system && me){
+        const acts=document.createElement("div"); acts.className="tactions";
+        const add=document.createElement("button"); add.textContent="+ add cuts";
+        add.onclick=()=>openIngest(m.machine_id, r.run_id); acts.appendChild(add);
+        const rnr=document.createElement("button"); rnr.textContent="rename";
+        rnr.onclick=()=>renameRun(m.machine_id, r); acts.appendChild(rnr);
+        const dlr=document.createElement("button"); dlr.className="del"; dlr.textContent="delete";
+        dlr.onclick=()=>deleteRun(m.machine_id, r); acts.appendChild(dlr);
+        g.appendChild(acts);
+      }
     }
     rail.appendChild(g);
   }
@@ -307,6 +323,28 @@ function renderEmpty(){
   }else{ $("emptyMsg").textContent="Select a tool from the left to watch live wear and remaining-useful-life estimation."; $("emptyActions").innerHTML=""; }
 }
 
+async function newTool(machineId){
+  const r = await api(`/machines/${machineId}/runs`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({})});
+  if(r.ok){ const d=await r.json(); await loadRail(d.run_id); }
+}
+async function deleteMachine(m){
+  if(!confirm(`Delete machine "${m.name||m.machine_id}" and all its tools? This cannot be undone.`)) return;
+  const r = await api(`/machines/${m.machine_id}`, {method:"DELETE"});
+  if(r.ok){ if(cur && cur.machine_id===m.machine_id) cur=null; await loadRail(); }
+}
+async function deleteRun(machineId, run){
+  if(!confirm(`Delete tool "${run.label||run.run_id}" and its cuts?`)) return;
+  const r = await api(`/machines/${machineId}/runs/${run.run_id}`, {method:"DELETE"});
+  if(r.ok){ if(cur && cur.run_id===run.run_id) cur=null; await loadRail(); }
+}
+async function renameRun(machineId, run){
+  const name = prompt("Rename tool", run.label || run.run_id);
+  if(name === null) return;
+  const r = await api(`/machines/${machineId}/runs/${run.run_id}`, {method:"PATCH",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
+  if(r.ok) await loadRail(cur && cur.run_id);
+}
 async function renameMachine(m){
   const name = prompt("Rename machine", m.name || m.machine_id);
   if(name === null) return;
@@ -420,7 +458,7 @@ $("machineCreate").onclick=async()=>{
 
 // ---------------- ingest modal ----------------
 const drop=$("drop"), file=$("file");
-function openIngest(machineId){ ingestTarget=machineId; $("ingestErr").textContent=""; $("ingestModal").classList.add("on"); }
+function openIngest(machineId, runId){ ingestTarget={machine:machineId, run:runId}; $("ingestErr").textContent=""; $("ingestModal").classList.add("on"); }
 $("ingestCancel").onclick=()=>$("ingestModal").classList.remove("on");
 $("ingestModal").onclick=e=>{ if(e.target===$("ingestModal")) $("ingestModal").classList.remove("on"); };
 drop.onclick=()=>file.click();
@@ -431,7 +469,7 @@ file.onchange=()=>{ if(file.files.length) upload(file.files); };
 async function upload(list){
   $("ingestErr").textContent=`uploading ${list.length} cut${list.length>1?"s":""}…`;
   const fd=new FormData(); [...list].forEach(f=>fd.append("files",f));
-  if(ingestTarget) fd.append("machine_id",ingestTarget);
+  if(ingestTarget){ fd.append("machine_id",ingestTarget.machine); if(ingestTarget.run) fd.append("run_id",ingestTarget.run); }
   try{
     const r=await api("/analyze",{method:"POST",body:fd});
     if(!r.ok){ const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail||"failed"); }

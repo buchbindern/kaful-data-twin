@@ -187,6 +187,22 @@ class SQLiteDataStore(DataStore):
                            (_dt(ended_at), run_id))
         self._conn.commit()
 
+    def delete_run(self, run_id: str) -> None:
+        for t in ("rul_predictions", "twin_state", "features", "wear_labels", "cuts"):
+            self._conn.execute(f"DELETE FROM {t} WHERE run_id=?", (run_id,))
+        self._conn.execute("DELETE FROM runs WHERE run_id=?", (run_id,))
+        self._conn.commit()
+
+    def delete_machine(self, machine_id: str) -> None:
+        for r in self.list_runs(machine_id):
+            self.delete_run(r.run_id)
+        self._conn.execute("DELETE FROM machines WHERE machine_id=?", (machine_id,))
+        self._conn.commit()
+
+    def rename_run(self, run_id: str, label) -> None:
+        self._conn.execute("UPDATE runs SET tool_id=? WHERE run_id=?", (label, run_id))
+        self._conn.commit()
+
     def list_runs(self, machine_id: str):
         rows = self._conn.execute(
             "SELECT * FROM runs WHERE machine_id=? ORDER BY started_at DESC", (machine_id,)

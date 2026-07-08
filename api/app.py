@@ -56,8 +56,8 @@ class RenameRequest(BaseModel):
 
 
 class NewRunRequest(BaseModel):
-    run_id: str
-    reference_run_id: str
+    run_id: str | None = None
+    reference_run_id: str | None = None
     tool_id: str | None = None
 
 
@@ -229,17 +229,45 @@ def create_app(store_dir: str = "var") -> FastAPI:
 
     @app.post("/machines/{machine_id}/runs")
     def start_run(machine_id: str, body: NewRunRequest, user: User = Depends(require_user)):
-        """Tool change: end the active run, start a fresh one, deploy a new twin."""
+        """Add a new tool (run) to the machine and deploy a twin. Tools coexist; this
+        does not end other tools."""
         _writable_machine(machine_id, user)
-        if data_store.get_run(body.reference_run_id) is None:
-            raise HTTPException(status_code=400,
-                                detail=f"reference run {body.reference_run_id!r} not found")
-        try:
-            run = start_new_run(data_store, machine_id, body.run_id,
-                                reference_run_id=body.reference_run_id, tool_id=body.tool_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc))
-        return {"run_id": run.run_id, "machine_id": run.machine_id, "status": "active"}
+        reference = body.reference_run_id or "c1"
+        if data_store.get_run(reference) is None:
+            raise HTTPException(status_code=400, detail=f"reference run {reference!r} not found")
+        run_id = body.run_id or ("run-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+                                 + "-" + secrets.token_hex(3))
+        if data_store.get_run(run_id) is not None:
+            raise HTTPException(status_code=409, detail=f"run {run_id!r} already exists")
+        data_store.create_run(Run(run_id, machine_id, tool_id=body.tool_id))
+        data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
+        return {"run_id": run_id, "machine_id": machine_id, "status": "active"}
+
+    @app.delete("/machines/{machine_id}")
+    def delete_machine_endpoint(machine_id: str, user: User = Depends(require_user)):
+        _writable_machine(machine_id, user)
+        data_store.delete_machine(machine_id)
+        return {"deleted": machine_id}
+
+    @app.delete("/machines/{machine_id}/runs/{run_id}")
+    def delete_run_endpoint(machine_id: str, run_id: str, user: User = Depends(require_user)):
+        _writable_machine(machine_id, user)
+        run = data_store.get_run(run_id)
+        if run is None or run.machine_id != machine_id:
+            raise HTTPException(status_code=404, detail="tool not found on this machine")
+        data_store.delete_run(run_id)
+        return {"deleted": run_id}
+
+    @app.patch("/machines/{machine_id}/runs/{run_id}")
+    def rename_run_endpoint(machine_id: str, run_id: str, body: RenameRequest,
+                            user: User = Depends(require_user)):
+        _writable_machine(machine_id, user)
+        run = data_store.get_run(run_id)
+        if run is None or run.machine_id != machine_id:
+            raise HTTPException(status_code=404, detail="tool not found on this machine")
+        label = (body.name or "").strip() or None
+        data_store.rename_run(run_id, label)
+        return {"run_id": run_id, "label": label}
 
     @app.post("/machines/{machine_id}/runs/{run_id}/cuts")
     async def ingest_cut(machine_id: str, run_id: str, request: Request,
@@ -295,7 +323,7 @@ def create_app(store_dir: str = "var") -> FastAPI:
                 n_cuts = len(data_store.read_all_features(r.run_id))
                 n_labels = len(data_store.read_wear_labels(r.run_id))
                 out.append({"machine_id": m.machine_id, "machine_type": m.machine_type,
-                            "run_id": r.run_id, "active": r.ended_at is None,
+                            "run_id": r.run_id, "label": r.tool_id, "active": r.ended_at is None,
                             "n_cuts": n_cuts, "has_labels": n_labels > 0})
         return {"runs": out}
 
@@ -313,7 +341,8 @@ def create_app(store_dir: str = "var") -> FastAPI:
 
     @app.post("/analyze")
     async def analyze(files: list[UploadFile] = File(...), reference: str = "c1",
-                      machine_id: str | None = Form(None), user: User = Depends(require_user)):
+                      machine_id: str | None = Form(None), run_id: str | None = Form(None),
+                      user: User = Depends(require_user)):
         """Upload cut files -> extract features -> create a run -> deploy the reference
         model. Returns a run_id the dashboard then streams via /replay."""
         if not files:
@@ -332,18 +361,21 @@ def create_app(store_dir: str = "var") -> FastAPI:
                 data_store.create_machine(Machine(target_id, "cnc_milling",
                                                   name="Uploaded tools", owner_id=user.user_id))
 
-        # Append to the machine's ACTIVE run (its current tool's life); start one if none.
-        active = data_store.get_active_run(target_id)
-        if active is None:
+        # Append to the SELECTED tool (run_id); if none given, create a new tool.
+        if run_id:
+            run = data_store.get_run(run_id)
+            if run is None or run.machine_id != target_id:
+                raise HTTPException(status_code=404, detail=f"tool {run_id!r} not found on this machine")
+            if run.ended_at is not None or data_store.read_wear_labels(run_id):
+                raise HTTPException(status_code=409, detail="this tool does not accept new cuts")
+            start = len(data_store.read_all_features(run_id))
+            if data_store.load_twin_state(run_id) is None:
+                data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
+        else:
             run_id = "run-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
             data_store.create_run(Run(run_id, target_id))
             data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
             start = 0
-        else:
-            run_id = active.run_id
-            start = len(data_store.read_all_features(run_id))
-            if data_store.load_twin_state(run_id) is None:
-                data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
 
         extractor = FeatureExtractor(PHM_CHANNELS)
         ordered = sorted(files, key=lambda f: f.filename or "")

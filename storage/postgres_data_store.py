@@ -177,6 +177,19 @@ class PostgresDataStore(DataStore):
     def end_run(self, run_id: str, ended_at: datetime) -> None:
         self._exec("UPDATE runs SET ended_at=%s WHERE run_id=%s", (_dt(ended_at), run_id))
 
+    def delete_run(self, run_id: str) -> None:
+        for t in ("rul_predictions", "twin_state", "features", "wear_labels", "cuts"):
+            self._exec(f"DELETE FROM {t} WHERE run_id=%s", (run_id,))
+        self._exec("DELETE FROM runs WHERE run_id=%s", (run_id,))
+
+    def delete_machine(self, machine_id: str) -> None:
+        for r in self.list_runs(machine_id):
+            self.delete_run(r.run_id)
+        self._exec("DELETE FROM machines WHERE machine_id=%s", (machine_id,))
+
+    def rename_run(self, run_id: str, label) -> None:
+        self._exec("UPDATE runs SET tool_id=%s WHERE run_id=%s", (label, run_id))
+
     def list_runs(self, machine_id: str):
         rows = self._all("SELECT * FROM runs WHERE machine_id=%s ORDER BY started_at DESC",
                          (machine_id,))

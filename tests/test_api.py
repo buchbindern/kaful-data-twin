@@ -142,13 +142,20 @@ def _upload_files():
                        for row in np.random.default_rng(i).standard_normal((120, 7))),
              "text/csv")) for i in range(1, 3)]
 
-def test_uploads_append_to_active_run(client):
+def test_uploads_to_same_tool_accumulate(client):
+    mid = _owned_machine(client)
+    t = client.post(f"/machines/{mid}/runs", json={}).json()["run_id"]
+    r1 = client.post("/analyze", files=_upload_files(), data={"machine_id": mid, "run_id": t}).json()
+    r2 = client.post("/analyze", files=_upload_files(), data={"machine_id": mid, "run_id": t}).json()
+    assert r1["run_id"] == r2["run_id"] == t            # same tool
+    assert r2["n_cuts"] == r1["n_cuts"] + r2["added"]   # cuts accumulate on it
+    assert client.get("/machines/phm2010/runs/c1/rul").status_code == 200   # system data intact
+
+def test_upload_without_tool_creates_new_tool(client):
     mid = _owned_machine(client)
     r1 = client.post("/analyze", files=_upload_files(), data={"machine_id": mid}).json()
     r2 = client.post("/analyze", files=_upload_files(), data={"machine_id": mid}).json()
-    assert r1["run_id"] == r2["run_id"]                 # same continuous tool run
-    assert r2["n_cuts"] == r1["n_cuts"] + r2["added"]   # cuts accumulate
-    assert client.get("/machines/phm2010/runs/c1/rul").status_code == 200   # system data intact
+    assert r1["run_id"] != r2["run_id"]                 # each is its own new tool
 
 def test_rename_machine(client):
     mid = _owned_machine(client)
@@ -198,3 +205,56 @@ def test_guest_sees_only_system_machines(tmp_path):
     runs = guest.get("/runs").json()["runs"]
     assert any(x["machine_id"] == "phm2010" for x in runs)     # system visible
     assert not any(x["machine_id"] == mid_a for x in runs)     # user machine hidden
+
+
+# ---------------- hierarchy: tools, add-to-selected, delete, rename ----------------
+
+def test_new_tool_creates_empty_run(client):
+    mid = _owned_machine(client)
+    r = client.post(f"/machines/{mid}/runs", json={})
+    assert r.status_code == 200
+    rid = r.json()["run_id"]
+    assert any(x["run_id"] == rid and x["n_cuts"] == 0 for x in client.get("/runs").json()["runs"])
+
+def test_cuts_go_to_selected_tool_not_active(client):
+    mid = _owned_machine(client)
+    t1 = client.post(f"/machines/{mid}/runs", json={}).json()["run_id"]
+    t2 = client.post(f"/machines/{mid}/runs", json={}).json()["run_id"]      # t2 is now "active"
+    # add cuts explicitly to t1 — must land on t1, NOT t2
+    client.post("/analyze", files=_upload_files(), data={"machine_id": mid, "run_id": t1})
+    runs = {r["run_id"]: r["n_cuts"] for r in client.get("/runs").json()["runs"]}
+    assert runs[t1] == 2 and runs[t2] == 0
+
+def test_delete_run_removes_it(client):
+    mid = _owned_machine(client)
+    t = client.post(f"/machines/{mid}/runs", json={}).json()["run_id"]
+    assert client.delete(f"/machines/{mid}/runs/{t}").status_code == 200
+    assert not any(x["run_id"] == t for x in client.get("/runs").json()["runs"])
+
+def test_delete_machine_cascade(client):
+    mid = _owned_machine(client)
+    client.post(f"/machines/{mid}/runs", json={})
+    assert client.delete(f"/machines/{mid}").status_code == 200
+    assert not any(m["machine_id"] == mid for m in client.get("/machines").json()["machines"])
+
+def test_rename_tool(client):
+    mid = _owned_machine(client)
+    t = client.post(f"/machines/{mid}/runs", json={}).json()["run_id"]
+    client.patch(f"/machines/{mid}/runs/{t}", json={"name": "Endmill #4"})
+    assert any(x["run_id"] == t and x["label"] == "Endmill #4" for x in client.get("/runs").json()["runs"])
+
+def test_delete_and_addcuts_require_ownership(tmp_path):
+    _seed_store_with_twin(tmp_path)
+    app = create_app(store_dir=str(tmp_path))
+    a = TestClient(app); mid_a = _owned_machine(a, "a@test.com")
+    ta = a.post(f"/machines/{mid_a}/runs", json={}).json()["run_id"]
+    b = TestClient(app); _signup(b, "b@test.com")
+    assert b.delete(f"/machines/{mid_a}").status_code == 404
+    assert b.delete(f"/machines/{mid_a}/runs/{ta}").status_code == 404
+    assert b.post("/analyze", files=_upload_files(), data={"machine_id": mid_a, "run_id": ta}).status_code == 404
+
+def test_cannot_addcuts_to_demo_tool(client):
+    _signup(client)
+    # c1 is a labeled system tool -> uploading to it is refused
+    r = client.post("/analyze", files=_upload_files(), data={"machine_id": "phm2010", "run_id": "c1"})
+    assert r.status_code in (404, 409)
