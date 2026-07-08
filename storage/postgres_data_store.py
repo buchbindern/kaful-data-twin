@@ -22,7 +22,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 from domain.models import (
-    Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState, WearLabel, User, Session)
+    Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState, WearLabel, User, Session,
+    CutResult)
 from domain.stores import DataStore
 
 
@@ -63,6 +64,13 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id),
     created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cut_results (
+    run_id TEXT NOT NULL, cut_index INTEGER NOT NULL,
+    wear_mean DOUBLE PRECISION NOT NULL, wear_lo DOUBLE PRECISION NOT NULL,
+    wear_hi DOUBLE PRECISION NOT NULL, wear_true DOUBLE PRECISION,
+    rul_median DOUBLE PRECISION, rul_lo DOUBLE PRECISION, rul_hi DOUBLE PRECISION,
+    censored DOUBLE PRECISION NOT NULL, computed_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, cut_index));
 CREATE TABLE IF NOT EXISTS wear_labels (
     run_id TEXT NOT NULL REFERENCES runs(run_id), cut_index INTEGER NOT NULL,
     wear_mm DOUBLE PRECISION NOT NULL, PRIMARY KEY (run_id, cut_index));
@@ -178,7 +186,7 @@ class PostgresDataStore(DataStore):
         self._exec("UPDATE runs SET ended_at=%s WHERE run_id=%s", (_dt(ended_at), run_id))
 
     def delete_run(self, run_id: str) -> None:
-        for t in ("rul_predictions", "twin_state", "features", "wear_labels", "cuts"):
+        for t in ("cut_results", "rul_predictions", "twin_state", "features", "wear_labels", "cuts"):
             self._exec(f"DELETE FROM {t} WHERE run_id=%s", (run_id,))
         self._exec("DELETE FROM runs WHERE run_id=%s", (run_id,))
 
@@ -280,6 +288,30 @@ class PostgresDataStore(DataStore):
         return [self._row_to_features(r) for r in rows]
 
     # ---------------- RUL ----------------
+    def read_all_cuts(self, run_id: str) -> list[Cut]:
+        rows = self._all("SELECT * FROM cuts WHERE run_id=%s ORDER BY cut_index", (run_id,))
+        return [Cut(r["run_id"], r["cut_index"], r["waveform_key"], _parse_dt(r["ingested_at"]))
+                for r in rows]
+
+    def save_cut_results(self, results) -> None:
+        self._many(
+            "INSERT INTO cut_results VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT(run_id,cut_index) DO UPDATE SET wear_mean=excluded.wear_mean, "
+            "wear_lo=excluded.wear_lo, wear_hi=excluded.wear_hi, wear_true=excluded.wear_true, "
+            "rul_median=excluded.rul_median, rul_lo=excluded.rul_lo, rul_hi=excluded.rul_hi, "
+            "censored=excluded.censored, computed_at=excluded.computed_at",
+            [(r.run_id, r.cut_index, r.wear_mean, r.wear_lo, r.wear_hi, r.wear_true,
+              r.rul_median, r.rul_lo, r.rul_hi, r.censored, _dt(r.computed_at)) for r in results])
+
+    def read_cut_results(self, run_id: str) -> list[CutResult]:
+        rows = self._all("SELECT * FROM cut_results WHERE run_id=%s ORDER BY cut_index", (run_id,))
+        return [CutResult(r["run_id"], r["cut_index"], r["wear_mean"], r["wear_lo"], r["wear_hi"],
+                          r["wear_true"], r["rul_median"], r["rul_lo"], r["rul_hi"], r["censored"],
+                          _parse_dt(r["computed_at"])) for r in rows]
+
+    def clear_cut_results(self, run_id: str) -> None:
+        self._exec("DELETE FROM cut_results WHERE run_id=%s", (run_id,))
+
     def append_rul(self, p: RULPrediction) -> None:
         self._exec("INSERT INTO rul_predictions "
                    "(run_id,cut_index,rul_median,rul_lower,rul_upper,ci_level,predicted_at) "

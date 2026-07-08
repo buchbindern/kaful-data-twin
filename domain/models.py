@@ -146,3 +146,19 @@ class Session:
     user_id: str
     created_at: datetime
     expires_at: datetime
+
+
+@dataclass(frozen=True)
+class CutResult:
+    """Stored per-cut filter output, so the dashboard shows current state without recomputing."""
+    run_id: str
+    cut_index: int
+    wear_mean: float
+    wear_lo: float
+    wear_hi: float
+    wear_true: Optional[float]
+    rul_median: float
+    rul_lo: float
+    rul_hi: float
+    censored: float
+    computed_at: datetime = field(default_factory=_utcnow)

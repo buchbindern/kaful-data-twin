@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from domain.models import (Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState,
-                            WearLabel, User, Session)
+                            WearLabel, User, Session, CutResult)
 from storage import SQLiteDataStore
 
 # SAFETY: use ONLY an explicit throwaway test DSN. Never fall back to DATABASE_URL
@@ -44,6 +44,8 @@ def _exercise(ds, now):
     ds.save_twin_state(TwinState("c1", 1, {"a": 1, "feature_name": "vibration_x_mean_abs"},
                                  b"\x00\x01\x02particles", now))
     ds.save_twin_state(TwinState("c1", 2, {"a": 2}, b"\xff\xfe", now))         # upsert overwrite
+    ds.save_cut_results([CutResult("c1", 1, 10.0, 8.0, 12.0, 5.0, 100.0, 80.0, 120.0, 0.0, now)])
+    ds.save_cut_results([CutResult("c1", 1, 11.0, 9.0, 13.0, None, None, None, None, 1.0, now)])  # upsert
     # auth
     real = datetime.now(timezone.utc)                 # session validity is vs real now
     ds.create_user(User("u1", "a@b.com", "hash", now))
@@ -66,6 +68,9 @@ def _exercise(ds, now):
         "user_by_email": ds.get_user_by_email("a@b.com").user_id,
         "valid_session": ds.get_valid_session("tok").user_id,
         "expired_session": ds.get_valid_session("old"),          # None
+        "cut_result_wear": ds.read_cut_results("c1")[0].wear_mean,   # 11.0 after upsert
+        "cut_result_rul_null": ds.read_cut_results("c1")[0].rul_median,  # None
+        "n_cuts_all": len(ds.read_all_cuts("c1")),
     }
 
 

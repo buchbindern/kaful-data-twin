@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from storage import SQLiteDataStore, object_store_from_env, data_store_from_env
 from features import FeatureExtractor
 from datasets import PHM_CHANNELS
-from domain.models import Machine, Run, Cut, FeatureRecord, User, Session
+from domain.models import Machine, Run, Cut, FeatureRecord, User, Session, CutResult
 from ingest import IngestHandler
 from twin import ParticleTwin, start_new_run, deploy_from_reference
 from auth import (hash_password, verify_password, new_session_token, session_expiry,
@@ -82,6 +82,28 @@ def _client_ip(request: Request) -> str:
 def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(COOKIE_NAME, token, max_age=int(SESSION_TTL.total_seconds()),
                         httponly=True, secure=COOKIE_SECURE, samesite="lax", path="/")
+
+
+def compute_and_store_results(data_store, run_id, reference, sigma_scale=2.5):
+    """Run the filter over a run ONCE and store per-cut wear + RUL, so the dashboard
+    shows current state instantly on view (no re-streaming)."""
+    data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
+    data_store.clear_rul(run_id)
+    data_store.clear_cut_results(run_id)
+    twin = ParticleTwin(data_store, sigma_scale=sigma_scale, seed=0)
+    labels = {l.cut_index: l.wear_mm for l in data_store.read_wear_labels(run_id)}
+    now = datetime.now(timezone.utc)
+    rows = []
+    for f in data_store.read_all_features(run_id):
+        rul = twin.update(run_id, f.cut_index, f.features)
+        wt = labels.get(f.cut_index)
+        rows.append(CutResult(run_id, f.cut_index, twin.last_wear_mean * 1000,
+                              twin.last_wear_lo * 1000, twin.last_wear_hi * 1000,
+                              (wt * 1000) if wt is not None else None,
+                              rul.rul_median, rul.rul_lower, rul.rul_upper,
+                              twin.last_rul_censored, now))
+    data_store.save_cut_results(rows)
+    return rows
 
 
 def create_app(store_dir: str = "var") -> FastAPI:
@@ -396,8 +418,35 @@ def create_app(store_dir: str = "var") -> FastAPI:
 
         data_store.append_cuts_bulk(cuts)          # one round trip instead of N
         data_store.append_features_bulk(feats)
+        default_ref = run_id if data_store.read_wear_labels(run_id) else reference
+        compute_and_store_results(data_store, run_id, default_ref)   # compute once, ready to view
         return {"run_id": run_id, "machine_id": target_id, "n_cuts": start + len(cuts),
                 "added": len(cuts), "reference": reference}
+
+    @app.get("/machines/{machine_id}/runs/{run_id}/results")
+    def get_results(machine_id: str, run_id: str, reference: str | None = None,
+                    user: User = Depends(optional_user)):
+        """Stored per-cut results for instant, static rendering (current state).
+        Computes + caches on first view; recomputes if `reference` is given."""
+        _readable_machine(machine_id, user)
+        if data_store.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail=f"run {run_id!r} not found")
+        default_ref = run_id if data_store.read_wear_labels(run_id) else "c1"
+        ref = reference or default_ref
+        results = data_store.read_cut_results(run_id)
+        if not results or reference is not None:
+            try:
+                results = compute_and_store_results(data_store, run_id, ref)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+        times = {c.cut_index: (c.ingested_at.isoformat() if c.ingested_at else None)
+                 for c in data_store.read_all_cuts(run_id)}
+        series = [{"cut": r.cut_index, "wear_mean": r.wear_mean, "wear_lo": r.wear_lo,
+                   "wear_hi": r.wear_hi, "wear_true": r.wear_true, "rul_median": r.rul_median,
+                   "rul_lo": r.rul_lo, "rul_hi": r.rul_hi, "censored": r.censored,
+                   "time": times.get(r.cut_index)} for r in results]
+        return {"run": run_id, "reference": ref, "n": len(series),
+                "threshold_um": 200.0, "results": series}
 
     @app.get("/machines/{machine_id}/runs/{run_id}/replay")
     def replay(machine_id: str, run_id: str, reference: str | None = None,

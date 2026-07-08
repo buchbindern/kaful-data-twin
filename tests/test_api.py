@@ -258,3 +258,33 @@ def test_cannot_addcuts_to_demo_tool(client):
     # c1 is a labeled system tool -> uploading to it is refused
     r = client.post("/analyze", files=_upload_files(), data={"machine_id": "phm2010", "run_id": "c1"})
     assert r.status_code in (404, 409)
+
+
+# ---------------- stored results (static current-state view) ----------------
+
+def test_results_endpoint_computes_and_caches_for_demo(client):
+    r = client.get("/machines/phm2010/runs/c1/results")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["n"] > 0 and len(body["results"]) == body["n"]
+    row = body["results"][-1]
+    for k in ("cut", "wear_mean", "wear_lo", "wear_hi", "censored", "time"):
+        assert k in row
+
+def test_results_ready_after_upload_without_restream(client):
+    mid = _owned_machine(client)
+    t = client.post(f"/machines/{mid}/runs", json={}).json()["run_id"]
+    up = client.post("/analyze", files=_upload_files(), data={"machine_id": mid, "run_id": t}).json()
+    # results are already stored by /analyze — fetch returns them directly
+    body = client.get(f"/machines/{mid}/runs/{t}/results").json()
+    assert body["n"] == up["n_cuts"]
+    assert all("wear_mean" in row for row in body["results"])
+
+def test_results_deleted_with_run(client):
+    mid = _owned_machine(client)
+    t = client.post(f"/machines/{mid}/runs", json={}).json()["run_id"]
+    client.post("/analyze", files=_upload_files(), data={"machine_id": mid, "run_id": t})
+    ds = client.app.state.data_store
+    assert len(ds.read_cut_results(t)) > 0
+    client.delete(f"/machines/{mid}/runs/{t}")
+    assert len(ds.read_cut_results(t)) == 0        # cascade cleared results

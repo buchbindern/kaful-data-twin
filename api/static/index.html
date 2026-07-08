@@ -152,7 +152,7 @@
               <div class="t" id="h-tool">—</div>
               <div class="m" id="h-machine">—</div>
               <div class="model"><span class="lbl">Model</span>
-                <select id="h-model"><option value="self">self-fit</option></select></div>
+                <select id="h-model"><option value="self">self-fit</option></select><button id="replayBtn" class="btn" style="padding:4px 10px;font-size:12px">▶ replay</button></div>
             </div>
             <div class="rul">
               <div class="pill" id="h-pill"><span class="pd"></span><span id="h-status">—</span></div>
@@ -178,7 +178,7 @@
           <div class="card feedcard">
             <span class="lbl">Recent cuts</span>
             <div class="feed"><table>
-              <thead><tr><th>cut</th><th>wear µm</th><th>RUL cuts</th><th>90% interval</th><th>status</th></tr></thead>
+              <thead><tr><th>cut</th><th>time</th><th>wear µm</th><th>RUL cuts</th><th>90% interval</th><th>status</th></tr></thead>
               <tbody id="feed"></tbody>
             </table></div>
           </div>
@@ -213,6 +213,19 @@
       <div class="row">
         <button class="btn" id="machineCancel">Cancel</button>
         <button class="btn primary" id="machineCreate">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- rename modal -->
+  <div class="modal" id="renameModal">
+    <div class="sheet">
+      <h3 id="renameTitle">Rename</h3>
+      <label>Name</label><input id="renameInput" placeholder="new name"/>
+      <div class="perr" id="renameErr"></div>
+      <div class="row">
+        <button class="btn" id="renameCancel">Cancel</button>
+        <button class="btn primary" id="renameSave">Save</button>
       </div>
     </div>
   </div>
@@ -338,20 +351,38 @@ async function deleteRun(machineId, run){
   const r = await api(`/machines/${machineId}/runs/${run.run_id}`, {method:"DELETE"});
   if(r.ok){ if(cur && cur.run_id===run.run_id) cur=null; await loadRail(); }
 }
-async function renameRun(machineId, run){
-  const name = prompt("Rename tool", run.label || run.run_id);
-  if(name === null) return;
-  const r = await api(`/machines/${machineId}/runs/${run.run_id}`, {method:"PATCH",
-    headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
-  if(r.ok) await loadRail(cur && cur.run_id);
+function renameRun(machineId, run){
+  openRename("Rename tool", run.label || run.run_id, async(name)=>{
+    const r = await api(`/machines/${machineId}/runs/${run.run_id}`, {method:"PATCH",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
+    if(!r.ok){ $("renameErr").textContent = "rename failed"; return false; }
+    await loadRail(cur && cur.run_id);
+  });
 }
-async function renameMachine(m){
-  const name = prompt("Rename machine", m.name || m.machine_id);
-  if(name === null) return;
-  const r = await api(`/machines/${m.machine_id}`, {method:"PATCH",
-    headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
-  if(r.ok) await loadRail(cur && cur.run_id);
+function renameMachine(m){
+  openRename("Rename machine", m.name || m.machine_id, async(name)=>{
+    const r = await api(`/machines/${m.machine_id}`, {method:"PATCH",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
+    if(!r.ok){ $("renameErr").textContent = "rename failed"; return false; }
+    await loadRail(cur && cur.run_id);
+  });
 }
+
+// generic rename modal
+let renameCtx=null;
+function openRename(title, current, onSave){
+  renameCtx=onSave;
+  $("renameTitle").textContent=title; $("renameInput").value=current||""; $("renameErr").textContent="";
+  $("renameModal").classList.add("on"); setTimeout(()=>$("renameInput").focus(),0);
+}
+$("renameCancel").onclick=()=>$("renameModal").classList.remove("on");
+$("renameModal").onclick=e=>{ if(e.target===$("renameModal")) $("renameModal").classList.remove("on"); };
+$("renameSave").onclick=async()=>{
+  const v=$("renameInput").value.trim();
+  const res = renameCtx ? await renameCtx(v) : undefined;
+  if(res !== false) $("renameModal").classList.remove("on");
+};
+$("renameInput") && ($("renameInput").onkeydown=e=>{ if(e.key==="Enter") $("renameSave").click(); });
 function machineOf(id){ return machines.find(m=>m.machine_id===id); }
 function modelOptions(run){
   const sel=$("h-model"); sel.innerHTML="";
@@ -361,14 +392,16 @@ function modelOptions(run){
 }
 function select(run){
   cur=run;
-  document.querySelectorAll(".tool").forEach(t=>t.classList.toggle("sel", t.querySelector(".name").textContent===run.run_id));
+  const disp=run.label||run.run_id;
+  document.querySelectorAll(".tool").forEach(t=>t.classList.toggle("sel", t.querySelector(".name").textContent===disp));
   const m=machineOf(run.machine_id);
   $("empty").classList.add("hidden"); $("mon").classList.remove("hidden");
-  $("h-tool").textContent="Tool "+run.run_id;
+  $("h-tool").textContent="Tool "+disp;
   $("h-machine").textContent=(m?(m.name||m.machine_id):run.machine_id)+" · cnc milling"+(run.active?" · active":"");
-  modelOptions(run); startStream();
+  modelOptions(run); loadResults();
 }
-$("h-model").onchange=()=>{ if(cur) startStream(); };
+$("h-model").onchange=()=>{ if(cur) loadResults(true); };
+$("replayBtn").onclick=()=>{ if(cur) startStream(); };
 
 // ---------------- streaming + charts ----------------
 let cuts=[],wm=[],wlo=[],whi=[],wt=[],rc=[],rmed=[],rlo=[],rhi=[],N=0;
@@ -380,6 +413,39 @@ function health(wear,rul,cens){
   if(rul<=60) return {t:"Replace soon",c:"warn"};
   return {t:"Monitoring · wear-out",c:"info"};
 }
+function fmtTime(t){ if(!t) return "—"; const d=new Date(t); return isNaN(d)?"—":d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}); }
+function pushCut(d){
+  cuts.push(d.cut);wm.push(d.wear_mean);wlo.push(d.wear_lo);whi.push(d.wear_hi);wt.push(d.wear_true);
+  const wo=d.censored<0.5;
+  if(wo){ rc.push(d.cut);rmed.push(d.rul_median);rlo.push(d.rul_lo);rhi.push(d.rul_hi); }
+  const hs=health(d.wear_mean,wo?d.rul_median:999,d.censored);
+  const cls=hs.c==="ok"?"st-ok":hs.c==="warn"?"st-warn":hs.c==="crit"?"st-crit":"st-info";
+  const tr=document.createElement("tr");
+  tr.innerHTML=`<td>${d.cut}</td><td class="st-mut">${fmtTime(d.time)}</td><td>${d.wear_mean.toFixed(1)}</td>`+
+    (wo?`<td>${d.rul_median.toFixed(0)}</td><td>${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)}</td>`:`<td class="st-mut">—</td><td class="st-mut">—</td>`)+
+    `<td class="${cls}">${hs.t.split(" · ")[0]}</td>`;
+  const fb=$("feed"); fb.insertBefore(tr,fb.firstChild);
+}
+function setHero(d){
+  const wo=d.censored<0.5, hs=health(d.wear_mean,wo?d.rul_median:999,d.censored);
+  $("h-cut").textContent=`${d.cut} / ${N}`; $("h-wear").textContent=d.wear_mean.toFixed(0);
+  $("h-pill").className="pill "+hs.c; $("h-status").textContent=hs.t;
+  if(wo){ $("h-rul").textContent="~"+d.rul_median.toFixed(0); $("h-ci").textContent=`90% CI  ${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)} cuts`; }
+  else{ $("h-rul").textContent="—"; $("h-ci").textContent=`${(d.censored*100).toFixed(0)}% of futures beyond horizon`; }
+}
+async function loadResults(){
+  if(es){ es.close(); es=null; } $("live").classList.remove("on");
+  resetSeries(); draw();
+  const model=$("h-model").value, ref = model==="self"?null:model;
+  const url=`/machines/${cur.machine_id}/runs/${cur.run_id}/results`+(ref?`?reference=${ref}`:"");
+  try{
+    const r=await api(url); if(!r.ok) throw new Error("results unavailable");
+    const d=await r.json(); N=d.n;
+    for(const c of d.results) pushCut(c);
+    if(d.results.length) setHero(d.results[d.results.length-1]);
+    draw();
+  }catch(e){ /* no cuts yet */ }
+}
 function startStream(){
   if(es) es.close(); resetSeries(); draw();
   const model=$("h-model").value, ref = model==="self"?null:model;
@@ -390,20 +456,7 @@ function startStream(){
     const d=JSON.parse(ev.data);
     if(d.type==="meta"){ N=d.n; draw(); return; }
     if(d.type==="done"){ es.close(); $("live").classList.remove("on"); return; }
-    cuts.push(d.cut);wm.push(d.wear_mean);wlo.push(d.wear_lo);whi.push(d.wear_hi);wt.push(d.wear_true);
-    const wo=d.censored<0.5;
-    if(wo){ rc.push(d.cut);rmed.push(d.rul_median);rlo.push(d.rul_lo);rhi.push(d.rul_hi); }
-    const hs=health(d.wear_mean,wo?d.rul_median:999,d.censored);
-    $("h-cut").textContent=`${d.cut} / ${N}`; $("h-wear").textContent=d.wear_mean.toFixed(0);
-    $("h-pill").className="pill "+hs.c; $("h-status").textContent=hs.t;
-    if(wo){ $("h-rul").textContent="~"+d.rul_median.toFixed(0); $("h-ci").textContent=`90% CI  ${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)} cuts`; }
-    else{ $("h-rul").textContent="—"; $("h-ci").textContent=`${(d.censored*100).toFixed(0)}% of futures beyond horizon`; }
-    const cls=hs.c==="ok"?"st-ok":hs.c==="warn"?"st-warn":hs.c==="crit"?"st-crit":"st-info";
-    const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${d.cut}</td><td>${d.wear_mean.toFixed(1)}</td>`+
-      (wo?`<td>${d.rul_median.toFixed(0)}</td><td>${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)}</td>`:`<td class="st-mut">—</td><td class="st-mut">—</td>`)+
-      `<td class="${cls}">${hs.t.split(" · ")[0]}</td>`;
-    const fb=$("feed"); fb.insertBefore(tr,fb.firstChild); draw();
+    pushCut(d); setHero(d); draw();
   };
   es.onerror=()=>{ es.close(); $("live").classList.remove("on"); };
 }

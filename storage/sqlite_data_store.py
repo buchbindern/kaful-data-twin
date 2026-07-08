@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Optional
 
 from domain.models import (
-    Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState, WearLabel, User, Session)
+    Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState, WearLabel, User, Session,
+    CutResult)
 from domain.stores import DataStore
 
 
@@ -107,6 +108,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id    TEXT NOT NULL REFERENCES users(user_id),
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cut_results (
+    run_id TEXT NOT NULL, cut_index INTEGER NOT NULL,
+    wear_mean REAL NOT NULL, wear_lo REAL NOT NULL, wear_hi REAL NOT NULL,
+    wear_true REAL, rul_median REAL, rul_lo REAL, rul_hi REAL,
+    censored REAL NOT NULL, computed_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, cut_index)
 );
 
 CREATE TABLE IF NOT EXISTS wear_labels (
@@ -188,7 +197,7 @@ class SQLiteDataStore(DataStore):
         self._conn.commit()
 
     def delete_run(self, run_id: str) -> None:
-        for t in ("rul_predictions", "twin_state", "features", "wear_labels", "cuts"):
+        for t in ("cut_results", "rul_predictions", "twin_state", "features", "wear_labels", "cuts"):
             self._conn.execute(f"DELETE FROM {t} WHERE run_id=?", (run_id,))
         self._conn.execute("DELETE FROM runs WHERE run_id=?", (run_id,))
         self._conn.commit()
@@ -317,6 +326,30 @@ class SQLiteDataStore(DataStore):
         return [self._row_to_features(r) for r in rows]
 
     # ---------------- RUL predictions ----------------
+    def read_all_cuts(self, run_id: str) -> list[Cut]:
+        rows = self._conn.execute(
+            "SELECT * FROM cuts WHERE run_id=? ORDER BY cut_index", (run_id,)).fetchall()
+        return [Cut(r["run_id"], r["cut_index"], r["waveform_key"], _parse_dt(r["ingested_at"]))
+                for r in rows]
+
+    def save_cut_results(self, results) -> None:
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO cut_results VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            [(r.run_id, r.cut_index, r.wear_mean, r.wear_lo, r.wear_hi, r.wear_true,
+              r.rul_median, r.rul_lo, r.rul_hi, r.censored, _dt(r.computed_at)) for r in results])
+        self._conn.commit()
+
+    def read_cut_results(self, run_id: str) -> list[CutResult]:
+        rows = self._conn.execute(
+            "SELECT * FROM cut_results WHERE run_id=? ORDER BY cut_index", (run_id,)).fetchall()
+        return [CutResult(r["run_id"], r["cut_index"], r["wear_mean"], r["wear_lo"], r["wear_hi"],
+                          r["wear_true"], r["rul_median"], r["rul_lo"], r["rul_hi"], r["censored"],
+                          _parse_dt(r["computed_at"])) for r in rows]
+
+    def clear_cut_results(self, run_id: str) -> None:
+        self._conn.execute("DELETE FROM cut_results WHERE run_id=?", (run_id,))
+        self._conn.commit()
+
     def append_rul(self, prediction: RULPrediction) -> None:
         self._conn.execute(
             "INSERT INTO rul_predictions VALUES (?,?,?,?,?,?,?)",
