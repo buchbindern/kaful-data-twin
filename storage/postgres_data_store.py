@@ -71,29 +71,50 @@ CREATE TABLE IF NOT EXISTS wear_labels (
 
 class PostgresDataStore(DataStore):
     def __init__(self, dsn: str) -> None:
-        self._conn = psycopg.connect(dsn, autocommit=True, row_factory=dict_row)
+        self._dsn = dsn
         self._lock = threading.RLock()          # single-writer model (matches SQLite store)
+        self._conn = self._connect()
         with self._lock, self._conn.cursor() as cur:
             for stmt in _SCHEMA.split(";"):
                 if stmt.strip():
                     cur.execute(stmt)
 
+    def _connect(self):
+        return psycopg.connect(self._dsn, autocommit=True, row_factory=dict_row)
+
+    def _query(self, sql, params, fetch):
+        """Run a statement, reconnecting once if the connection was dropped (Neon
+        auto-suspend / server restart terminates idle connections)."""
+        with self._lock:
+            for attempt in (1, 2):
+                try:
+                    with self._conn.cursor() as cur:
+                        cur.execute(sql, params)
+                        if fetch == "one":
+                            return cur.fetchone()
+                        if fetch == "all":
+                            return cur.fetchall()
+                        return None
+                except psycopg.OperationalError:
+                    if attempt == 2:
+                        raise
+                    try:
+                        self._conn.close()
+                    except Exception:
+                        pass
+                    self._conn = self._connect()
+
     def close(self) -> None:
         self._conn.close()
 
     def _one(self, sql, params=()):
-        with self._lock, self._conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchone()
+        return self._query(sql, params, "one")
 
     def _all(self, sql, params=()):
-        with self._lock, self._conn.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchall()
+        return self._query(sql, params, "all")
 
     def _exec(self, sql, params=()):
-        with self._lock, self._conn.cursor() as cur:
-            cur.execute(sql, params)
+        return self._query(sql, params, "none")
 
     # ---------------- Machine ----------------
     def create_machine(self, machine: Machine) -> None:
