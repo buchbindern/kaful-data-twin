@@ -36,7 +36,8 @@ from datasets import PHM_CHANNELS
 from domain.models import Machine, Run, Cut, FeatureRecord, User, Session
 from ingest import IngestHandler
 from twin import ParticleTwin, start_new_run, deploy_from_reference
-from auth import hash_password, verify_password, new_session_token, session_expiry, SESSION_TTL
+from auth import (hash_password, verify_password, new_session_token, session_expiry,
+                  SESSION_TTL, RateLimiter)
 
 
 class Credentials(BaseModel):
@@ -66,6 +67,13 @@ def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(COOKIE_NAME, token, max_age=int(SESSION_TTL.total_seconds()),
                         httponly=True, secure=COOKIE_SECURE, samesite="lax", path="/")
@@ -82,6 +90,17 @@ def create_app(store_dir: str = "var") -> FastAPI:
 
     app.state.data_store = data_store
     app.state.handler = handler
+
+    login_limiter = RateLimiter(int(os.environ.get("KAFUL_LOGIN_RATE", "10")), 60)
+    signup_limiter = RateLimiter(int(os.environ.get("KAFUL_SIGNUP_RATE", "5")), 60)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        resp = await call_next(request)
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return resp
 
     @app.get("/health")
     def health():
@@ -141,13 +160,15 @@ def create_app(store_dir: str = "var") -> FastAPI:
         return {"machine_id": machine_id, "name": body.name, "machine_type": mtype}
 
     @app.post("/auth/signup")
-    def signup(body: Credentials, response: Response):
+    def signup(body: Credentials, request: Request, response: Response):
+        if not signup_limiter.allow(_client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many signups, please try again later")
         email = _normalize_email(body.email)
-        if not _EMAIL_RE.match(email):
+        if not _EMAIL_RE.match(email) or len(email) > 254:
             raise HTTPException(status_code=400, detail="invalid email address")
-        if len(body.password) < MIN_PASSWORD_LEN:
+        if not (MIN_PASSWORD_LEN <= len(body.password) <= 128):
             raise HTTPException(status_code=400,
-                                detail=f"password must be at least {MIN_PASSWORD_LEN} characters")
+                                detail=f"password must be {MIN_PASSWORD_LEN}-128 characters")
         if data_store.get_user_by_email(email) is not None:
             raise HTTPException(status_code=409, detail="email already registered")
         now = datetime.now(timezone.utc)
@@ -159,7 +180,10 @@ def create_app(store_dir: str = "var") -> FastAPI:
         return {"user_id": user.user_id, "email": user.email}
 
     @app.post("/auth/login")
-    def login(body: Credentials, response: Response):
+    def login(body: Credentials, request: Request, response: Response):
+        if not login_limiter.allow(_client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many attempts, please try again later")
+        data_store.delete_expired_sessions(datetime.now(timezone.utc))   # opportunistic cleanup
         email = _normalize_email(body.email)
         user = data_store.get_user_by_email(email)
         if user is None or not verify_password(body.password, user.password_hash):
@@ -175,6 +199,12 @@ def create_app(store_dir: str = "var") -> FastAPI:
         token = request.cookies.get(COOKIE_NAME)
         if token:
             data_store.delete_session(token)
+        response.delete_cookie(COOKIE_NAME, path="/")
+        return {"ok": True}
+
+    @app.post("/auth/logout-all")
+    def logout_all(response: Response, user: User = Depends(require_user)):
+        data_store.delete_user_sessions(user.user_id)
         response.delete_cookie(COOKIE_NAME, path="/")
         return {"ok": True}
 

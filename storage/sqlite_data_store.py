@@ -227,6 +227,10 @@ class SQLiteDataStore(DataStore):
         self._conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         self._conn.commit()
 
+    def delete_expired_sessions(self, now) -> None:
+        self._conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (_dt(now),))
+        self._conn.commit()
+
     def _row_to_user(self, row) -> User:
         return User(row["user_id"], row["email"], row["password_hash"],
                     _parse_dt(row["created_at"]))

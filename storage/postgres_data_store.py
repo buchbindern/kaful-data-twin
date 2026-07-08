@@ -181,6 +181,9 @@ class PostgresDataStore(DataStore):
     def delete_user_sessions(self, user_id: str) -> None:
         self._exec("DELETE FROM sessions WHERE user_id=%s", (user_id,))
 
+    def delete_expired_sessions(self, now) -> None:
+        self._exec("DELETE FROM sessions WHERE expires_at <= %s", (_dt(now),))
+
     # ---------------- Cut ----------------
     def append_cut(self, cut: Cut) -> None:
         self._exec("INSERT INTO cuts (run_id,cut_index,waveform_key,ingested_at) "
