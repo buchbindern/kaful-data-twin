@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 
 from storage.filesystem_object_store import FilesystemObjectStore
+from storage.sqlite_data_store import SQLiteDataStore
 
 
 def object_store_from_env(store_dir: str | os.PathLike):
@@ -37,3 +38,16 @@ def object_store_from_env(store_dir: str | os.PathLike):
             region=os.environ.get("KAFUL_S3_REGION") or None,
         )
     return FilesystemObjectStore(Path(store_dir) / "object_store")
+
+
+def data_store_from_env(store_dir: str | os.PathLike):
+    """Build the configured DataStore.  KAFUL_DB = "sqlite" (default) | "postgres".
+    Postgres requires DATABASE_URL (used on deploy so accounts persist)."""
+    kind = os.environ.get("KAFUL_DB", "sqlite").lower()
+    if kind == "postgres":
+        from storage.postgres_data_store import PostgresDataStore
+        dsn = os.environ.get("DATABASE_URL")
+        if not dsn:
+            raise RuntimeError("KAFUL_DB=postgres but DATABASE_URL is not set")
+        return PostgresDataStore(dsn)
+    return SQLiteDataStore(Path(store_dir) / "kaful.db")

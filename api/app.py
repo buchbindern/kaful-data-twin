@@ -30,7 +30,7 @@ from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File,
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
-from storage import SQLiteDataStore, object_store_from_env
+from storage import SQLiteDataStore, object_store_from_env, data_store_from_env
 from features import FeatureExtractor
 from datasets import PHM_CHANNELS
 from domain.models import Machine, Run, Cut, FeatureRecord, User, Session
@@ -75,7 +75,7 @@ def create_app(store_dir: str = "var") -> FastAPI:
     app = FastAPI(title="Kaful data-first twin", version="0.1.0")
     store_dir = Path(store_dir)
 
-    data_store = SQLiteDataStore(store_dir / "kaful.db")
+    data_store = data_store_from_env(store_dir)
     object_store = object_store_from_env(store_dir)
     twin = ParticleTwin(data_store)            # uses the calibrated sigma_scale default
     handler = IngestHandler(data_store, object_store, FeatureExtractor(PHM_CHANNELS), twin)

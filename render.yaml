@@ -1,24 +1,41 @@
-# Render Blueprint — deploys the Kaful monitor as a native Python web service.
-# Secrets (R2 credentials) are set in the Render dashboard, not committed here.
+# Render Blueprint — Kaful multi-tenant deploy.
+# Persistence: Postgres (accounts + user machines survive redeploys). Reference tools
+# (c1/c4/c6) are seeded from the committed deploy/kaful.db on each deploy (idempotent).
+# Raw waveforms: Cloudflare R2. All secrets are set in the dashboard (sync:false).
 services:
   - type: web
     name: kaful-monitor
     runtime: python
     plan: free
-    buildCommand: pip install -e ".[s3]"
+    buildCommand: pip install -e ".[postgres,s3]"
+    preDeployCommand: python scripts/seed_postgres.py     # load c1/c4/c6 into Postgres (idempotent)
     startCommand: python scripts/serve.py --store-dir deploy
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
+      - key: KAFUL_DB
+        value: postgres
+      - key: DATABASE_URL
+        sync: false        # set in dashboard — a Neon (recommended, doesn't expire) or Render Postgres URL
+      - key: KAFUL_COOKIE_SECURE
+        value: "true"      # HTTPS-only session cookie in production
       - key: KAFUL_OBJECT_STORE
         value: s3
       - key: KAFUL_S3_REGION
         value: auto
       - key: KAFUL_S3_BUCKET
-        sync: false        # set in dashboard
+        sync: false
       - key: KAFUL_S3_ENDPOINT_URL
-        sync: false        # set in dashboard
+        sync: false
       - key: AWS_ACCESS_KEY_ID
-        sync: false        # set in dashboard
+        sync: false
       - key: AWS_SECRET_ACCESS_KEY
-        sync: false        # set in dashboard
+        sync: false
+
+# --- Alternative: let Render provision the Postgres (free tier expires ~30 days).
+# databases:
+#   - name: kaful-db
+#     plan: free
+# Then set DATABASE_URL via fromDatabase instead of sync:false:
+#       - key: DATABASE_URL
+#         fromDatabase: { name: kaful-db, property: connectionString }
