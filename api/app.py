@@ -19,26 +19,51 @@ from pathlib import Path
 
 import io
 import json
+import os
+import re
 import secrets
+import uuid
 from datetime import datetime, timezone
 
 import numpy as np
-from fastapi import FastAPI, Request, HTTPException, UploadFile, File
+from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
 from storage import SQLiteDataStore, object_store_from_env
 from features import FeatureExtractor
 from datasets import PHM_CHANNELS
-from domain.models import Machine, Run, Cut, FeatureRecord
+from domain.models import Machine, Run, Cut, FeatureRecord, User, Session
 from ingest import IngestHandler
 from twin import ParticleTwin, start_new_run, deploy_from_reference
+from auth import hash_password, verify_password, new_session_token, session_expiry, SESSION_TTL
+
+
+class Credentials(BaseModel):
+    email: str
+    password: str
 
 
 class NewRunRequest(BaseModel):
     run_id: str
     reference_run_id: str
     tool_id: str | None = None
+
+
+COOKIE_NAME = "kaful_session"
+# secure=True requires HTTPS; keep False for local http dev, set KAFUL_COOKIE_SECURE=true on deploy.
+COOKIE_SECURE = os.environ.get("KAFUL_COOKIE_SECURE", "false").lower() == "true"
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+MIN_PASSWORD_LEN = 8
+
+
+def _normalize_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(COOKIE_NAME, token, max_age=int(SESSION_TTL.total_seconds()),
+                        httponly=True, secure=COOKIE_SECURE, samesite="lax", path="/")
 
 
 def create_app(store_dir: str = "var") -> FastAPI:
@@ -56,6 +81,67 @@ def create_app(store_dir: str = "var") -> FastAPI:
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    # ---------------- Auth ----------------
+    def optional_user(request: Request):
+        token = request.cookies.get(COOKIE_NAME)
+        if not token:
+            return None
+        sess = data_store.get_valid_session(token)
+        if sess is None:
+            return None
+        return data_store.get_user(sess.user_id)
+
+    def require_user(request: Request) -> User:
+        user = optional_user(request)
+        if user is None:
+            raise HTTPException(status_code=401, detail="not authenticated")
+        return user
+
+    app.state.optional_user = optional_user
+    app.state.require_user = require_user
+
+    @app.post("/auth/signup")
+    def signup(body: Credentials, response: Response):
+        email = _normalize_email(body.email)
+        if not _EMAIL_RE.match(email):
+            raise HTTPException(status_code=400, detail="invalid email address")
+        if len(body.password) < MIN_PASSWORD_LEN:
+            raise HTTPException(status_code=400,
+                                detail=f"password must be at least {MIN_PASSWORD_LEN} characters")
+        if data_store.get_user_by_email(email) is not None:
+            raise HTTPException(status_code=409, detail="email already registered")
+        now = datetime.now(timezone.utc)
+        user = User(uuid.uuid4().hex, email, hash_password(body.password), now)
+        data_store.create_user(user)
+        token = new_session_token()
+        data_store.create_session(Session(token, user.user_id, now, session_expiry(now)))
+        _set_session_cookie(response, token)
+        return {"user_id": user.user_id, "email": user.email}
+
+    @app.post("/auth/login")
+    def login(body: Credentials, response: Response):
+        email = _normalize_email(body.email)
+        user = data_store.get_user_by_email(email)
+        if user is None or not verify_password(body.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="invalid email or password")
+        now = datetime.now(timezone.utc)
+        token = new_session_token()
+        data_store.create_session(Session(token, user.user_id, now, session_expiry(now)))
+        _set_session_cookie(response, token)
+        return {"user_id": user.user_id, "email": user.email}
+
+    @app.post("/auth/logout")
+    def logout(request: Request, response: Response):
+        token = request.cookies.get(COOKIE_NAME)
+        if token:
+            data_store.delete_session(token)
+        response.delete_cookie(COOKIE_NAME, path="/")
+        return {"ok": True}
+
+    @app.get("/auth/me")
+    def me(user: User = Depends(require_user)):
+        return {"user_id": user.user_id, "email": user.email}
 
     @app.post("/machines/{machine_id}/runs")
     def start_run(machine_id: str, body: NewRunRequest):
