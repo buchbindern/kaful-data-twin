@@ -44,6 +44,11 @@ class Credentials(BaseModel):
     password: str
 
 
+class NewMachineRequest(BaseModel):
+    name: str | None = None
+    machine_type: str | None = None
+
+
 class NewRunRequest(BaseModel):
     run_id: str
     reference_run_id: str
@@ -101,6 +106,30 @@ def create_app(store_dir: str = "var") -> FastAPI:
     app.state.optional_user = optional_user
     app.state.require_user = require_user
 
+    # ---- authorization: system machines (owner_id None) are readable by all, read-only ----
+    def _visible(machine, user) -> bool:
+        return machine.owner_id is None or (user is not None and machine.owner_id == user.user_id)
+
+    def _readable_machine(machine_id, user):
+        m = data_store.get_machine(machine_id)
+        if m is None or not _visible(m, user):
+            raise HTTPException(status_code=404, detail=f"machine {machine_id!r} not found")
+        return m
+
+    def _writable_machine(machine_id, user):
+        m = data_store.get_machine(machine_id)
+        # system machines are read-only; another user's machine is hidden (404, no leak)
+        if m is None or m.owner_id != user.user_id:
+            raise HTTPException(status_code=404, detail=f"machine {machine_id!r} not found")
+        return m
+
+    @app.post("/machines")
+    def create_machine_endpoint(body: NewMachineRequest, user: User = Depends(require_user)):
+        machine_id = "m-" + secrets.token_hex(6)
+        mtype = body.machine_type or "cnc_milling"
+        data_store.create_machine(Machine(machine_id, mtype, name=body.name, owner_id=user.user_id))
+        return {"machine_id": machine_id, "name": body.name, "machine_type": mtype}
+
     @app.post("/auth/signup")
     def signup(body: Credentials, response: Response):
         email = _normalize_email(body.email)
@@ -144,10 +173,9 @@ def create_app(store_dir: str = "var") -> FastAPI:
         return {"user_id": user.user_id, "email": user.email}
 
     @app.post("/machines/{machine_id}/runs")
-    def start_run(machine_id: str, body: NewRunRequest):
+    def start_run(machine_id: str, body: NewRunRequest, user: User = Depends(require_user)):
         """Tool change: end the active run, start a fresh one, deploy a new twin."""
-        if data_store.get_machine(machine_id) is None:
-            raise HTTPException(status_code=404, detail=f"machine {machine_id!r} not found")
+        _writable_machine(machine_id, user)
         if data_store.get_run(body.reference_run_id) is None:
             raise HTTPException(status_code=400,
                                 detail=f"reference run {body.reference_run_id!r} not found")
@@ -159,7 +187,9 @@ def create_app(store_dir: str = "var") -> FastAPI:
         return {"run_id": run.run_id, "machine_id": run.machine_id, "status": "active"}
 
     @app.post("/machines/{machine_id}/runs/{run_id}/cuts")
-    async def ingest_cut(machine_id: str, run_id: str, request: Request):
+    async def ingest_cut(machine_id: str, run_id: str, request: Request,
+                         user: User = Depends(require_user)):
+        _writable_machine(machine_id, user)
         raw = await request.body()                      # the compressed waveform blob
         if not raw:
             raise HTTPException(status_code=400, detail="empty body: expected waveform bytes")
@@ -185,7 +215,8 @@ def create_app(store_dir: str = "var") -> FastAPI:
                 "ci_level": rul.ci_level}
 
     @app.get("/machines/{machine_id}/runs/{run_id}/rul")
-    def get_rul(machine_id: str, run_id: str):
+    def get_rul(machine_id: str, run_id: str, user: User = Depends(optional_user)):
+        _readable_machine(machine_id, user)
         preds = data_store.read_all_rul(run_id)
         return {"run_id": run_id, "n": len(preds),
                 "predictions": [{"cut_index": p.cut_index, "rul_median": p.rul_median,
@@ -199,10 +230,12 @@ def create_app(store_dir: str = "var") -> FastAPI:
         return FileResponse(_STATIC / "index.html")
 
     @app.get("/runs")
-    def all_runs():
-        """Every run across all machines, for the monitor's tool rail."""
+    def all_runs(user: User = Depends(optional_user)):
+        """Runs across machines the caller may see (system + their own)."""
         out = []
         for m in data_store.list_machines():
+            if not _visible(m, user):
+                continue
             for r in data_store.list_runs(m.machine_id):
                 n_cuts = len(data_store.read_all_features(r.run_id))
                 n_labels = len(data_store.read_wear_labels(r.run_id))
@@ -212,7 +245,8 @@ def create_app(store_dir: str = "var") -> FastAPI:
         return {"runs": out}
 
     @app.get("/machines/{machine_id}/runs")
-    def list_runs(machine_id: str):
+    def list_runs(machine_id: str, user: User = Depends(optional_user)):
+        _readable_machine(machine_id, user)
         runs = data_store.list_runs(machine_id)
         out = []
         for r in runs:
@@ -223,7 +257,8 @@ def create_app(store_dir: str = "var") -> FastAPI:
         return {"machine_id": machine_id, "runs": out}
 
     @app.post("/analyze")
-    async def analyze(files: list[UploadFile] = File(...), reference: str = "c1"):
+    async def analyze(files: list[UploadFile] = File(...), reference: str = "c1",
+                      user: User = Depends(require_user)):
         """Upload cut files -> extract features -> create a run -> deploy the reference
         model. Returns a run_id the dashboard then streams via /replay."""
         if not files:
@@ -234,10 +269,12 @@ def create_app(store_dir: str = "var") -> FastAPI:
         if len(files) > 400:
             raise HTTPException(status_code=400, detail="too many files (max 400 cuts per upload)")
 
-        if data_store.get_machine("uploads") is None:
-            data_store.create_machine(Machine("uploads", "cnc_milling", name="Uploaded tools"))
+        uploads_id = f"uploads-{user.user_id}"
+        if data_store.get_machine(uploads_id) is None:
+            data_store.create_machine(Machine(uploads_id, "cnc_milling",
+                                              name="Uploaded tools", owner_id=user.user_id))
         run_id = "upload-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
-        data_store.create_run(Run(run_id, "uploads"))
+        data_store.create_run(Run(run_id, uploads_id))
 
         extractor = FeatureExtractor(PHM_CHANNELS)
         ordered = sorted(files, key=lambda f: f.filename or "")
@@ -257,13 +294,14 @@ def create_app(store_dir: str = "var") -> FastAPI:
             n += 1
 
         data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
-        return {"run_id": run_id, "machine_id": "uploads", "n_cuts": n, "reference": reference}
+        return {"run_id": run_id, "machine_id": uploads_id, "n_cuts": n, "reference": reference}
 
     @app.get("/machines/{machine_id}/runs/{run_id}/replay")
     def replay(machine_id: str, run_id: str, reference: str | None = None,
-               sigma_scale: float = 2.5):
+               sigma_scale: float = 2.5, user: User = Depends(optional_user)):
         """Stream the filter over a run's cuts as Server-Sent Events, for the live
         dashboard. Deploys a fresh twin first (fit on `reference`, default: self)."""
+        _readable_machine(machine_id, user)
         if data_store.get_run(run_id) is None:
             raise HTTPException(status_code=404, detail=f"run {run_id!r} not found")
         ref = reference or run_id

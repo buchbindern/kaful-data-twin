@@ -35,6 +35,7 @@ class Machine:
     machine_type: str
     name: Optional[str] = None
     created_at: datetime = field(default_factory=_utcnow)
+    owner_id: Optional[str] = None   # None = system machine (readable by all, read-only)
 
 
 @dataclass

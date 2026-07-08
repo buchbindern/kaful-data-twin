@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS machines (
     machine_id   TEXT PRIMARY KEY,
     machine_type TEXT NOT NULL,
     name         TEXT,
-    created_at   TEXT NOT NULL
+    created_at   TEXT NOT NULL,
+    owner_id     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS runs (
@@ -125,6 +126,10 @@ class SQLiteDataStore(DataStore):
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")  # SQLite needs this per-connection
         self._conn.executescript(_SCHEMA)
+        try:                                   # migrate pre-existing DBs
+            self._conn.execute("ALTER TABLE machines ADD COLUMN owner_id TEXT")
+        except sqlite3.OperationalError:
+            pass                               # column already present
         self._conn.commit()
 
     def close(self) -> None:
@@ -133,8 +138,9 @@ class SQLiteDataStore(DataStore):
     # ---------------- Machine ----------------
     def create_machine(self, machine: Machine) -> None:
         self._conn.execute(
-            "INSERT INTO machines VALUES (?,?,?,?)",
-            (machine.machine_id, machine.machine_type, machine.name, _dt(machine.created_at)),
+            "INSERT INTO machines VALUES (?,?,?,?,?)",
+            (machine.machine_id, machine.machine_type, machine.name, _dt(machine.created_at),
+             machine.owner_id),
         )
         self._conn.commit()
 
@@ -145,7 +151,7 @@ class SQLiteDataStore(DataStore):
         if row is None:
             return None
         return Machine(row["machine_id"], row["machine_type"], row["name"],
-                       _parse_dt(row["created_at"]))
+                       _parse_dt(row["created_at"]), row["owner_id"])
 
     # ---------------- Run ----------------
     def create_run(self, run: Run) -> None:
@@ -227,7 +233,8 @@ class SQLiteDataStore(DataStore):
 
     def list_machines(self):
         rows = self._conn.execute("SELECT * FROM machines ORDER BY machine_id").fetchall()
-        return [Machine(r["machine_id"], r["machine_type"], r["name"], _parse_dt(r["created_at"]))
+        return [Machine(r["machine_id"], r["machine_type"], r["name"], _parse_dt(r["created_at"]),
+                        r["owner_id"])
                 for r in rows]
 
     # ---------------- Cut ----------------
