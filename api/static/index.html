@@ -6,10 +6,9 @@
 <title>Kaful · Tool Condition Monitoring</title>
 <style>
   :root{
-    --bg:#f5f7fa; --surface:#ffffff; --surface-2:#fafbfd; --border:#e5e9f0;
+    --bg:#f5f7fa; --surface:#fff; --surface-2:#fafbfd; --border:#e5e9f0;
     --ink:#141b2b; --sub:#586475; --muted:#98a3b3;
-    --brand:#0f766e; --signal:#0d9488; --signal-fill:rgba(13,148,136,.13);
-    --rul:#b45309; --rul-fill:rgba(180,83,9,.11); --danger:#dc2626;
+    --brand:#0f766e; --signal:#0d9488; --rul:#b45309; --danger:#dc2626;
     --ok:#059669; --ok-bg:#ecfdf5; --warn:#b45309; --warn-bg:#fffbeb;
     --crit:#dc2626; --crit-bg:#fef2f2; --info:#0f766e; --info-bg:#f0fdfa;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -21,41 +20,57 @@
   body{display:flex;flex-direction:column;min-height:100vh}
   .lbl{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
   .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  button{font-family:var(--sans);cursor:pointer}
 
-  /* top bar */
   header{display:flex;align-items:center;gap:14px;padding:0 22px;height:56px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
   .brand{display:flex;align-items:center;gap:9px;font-weight:670;font-size:15px;letter-spacing:-.01em}
-  .brand .mark{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--brand),#14b8a6);display:inline-block}
-  .brand small{color:var(--muted);font-weight:500;font-size:13px;letter-spacing:0}
-  header .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+  .brand .mark{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--brand),#14b8a6)}
+  .brand small{color:var(--muted);font-weight:500;font-size:13px}
+  header .right{margin-left:auto;display:flex;align-items:center;gap:12px;position:relative}
   .live{display:none;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--signal)}
   .live.on{display:flex}
   .live .dot{width:8px;height:8px;border-radius:50%;background:var(--signal);animation:pulse 1.4s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  .btn{border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:8px;padding:8px 14px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer}
+  .btn{border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600}
   .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
   .btn:hover{background:var(--surface-2)} .btn.primary:hover{background:#0c6058}
+  .acct{position:relative}
+  .acct .who{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;padding:7px 12px;background:var(--surface);font-size:13px;font-weight:600}
+  .acct .who .av{width:22px;height:22px;border-radius:50%;background:var(--info-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .menu{position:absolute;right:0;top:44px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);min-width:200px;padding:6px;display:none;z-index:30}
+  .menu.on{display:block}
+  .menu .email{padding:8px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border);margin-bottom:4px;word-break:break-all}
+  .menu button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:9px 10px;border-radius:6px;font-size:13px;color:var(--ink)}
+  .menu button:hover{background:var(--surface-2)}
 
-  /* layout */
   .body{flex:1;display:flex;min-height:0}
-  .rail{width:250px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;overflow:auto}
-  .rail h2{margin:4px 8px 12px;font-size:11px}
-  .tool{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:9px;padding:11px 12px;margin-bottom:3px;cursor:pointer}
+  .rail{width:258px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:14px 12px;overflow:auto;display:flex;flex-direction:column}
+  .rail h2{margin:4px 8px 10px;font-size:11px}
+  .mgroup{margin-bottom:14px}
+  .mhead{display:flex;align-items:center;gap:7px;padding:4px 8px;font-size:12px;font-weight:700;color:var(--ink)}
+  .mhead .badge{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--brand);background:var(--info-bg);border-radius:5px;padding:2px 6px}
+  .mhead .stream{margin-left:auto;border:0;background:transparent;color:var(--brand);font-size:12px;font-weight:600;padding:2px 4px}
+  .mhead .stream:hover{text-decoration:underline}
+  .tool{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:8px;padding:9px 12px;margin:2px 0 2px 10px;cursor:pointer}
   .tool:hover{background:var(--surface-2)}
   .tool.sel{background:var(--info-bg);border-color:#cdeae6}
-  .tool .r1{display:flex;align-items:center;gap:8px}
-  .tool .sdot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
-  .tool.sel .sdot{background:var(--brand)}
-  .tool .name{font-family:var(--mono);font-weight:650;font-size:14px}
-  .tool .meta{margin-top:3px;margin-left:16px;font-size:11.5px;color:var(--muted)}
-  .rail .divider{height:1px;background:var(--border);margin:12px 8px}
+  .tool .name{font-family:var(--mono);font-weight:650;font-size:13.5px}
+  .tool .meta{margin-top:2px;font-size:11px;color:var(--muted)}
+  .mempty{margin:2px 0 2px 10px;padding:9px 12px;font-size:12px;color:var(--muted)}
+  .rail .spacer{flex:1}
+  .newm{border:1px dashed var(--border);background:transparent;color:var(--sub);border-radius:9px;padding:11px;font-size:13px;font-weight:600;width:100%}
+  .newm:hover{background:var(--surface-2);border-color:var(--brand);color:var(--brand)}
+  .signin-cta{border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:10px;background:var(--surface-2)}
+  .signin-cta p{margin:0 0 10px;font-size:12.5px;color:var(--sub);line-height:1.5}
 
   main{flex:1;min-width:0;overflow:auto;padding:22px 26px}
   .wrap{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+  .empty{color:var(--muted);text-align:center;padding:80px 20px}
+  .empty h3{color:var(--ink);font-size:18px;margin:0 0 8px}
+  .empty p{margin:0 auto 18px;max-width:420px;line-height:1.6;font-size:14px}
 
-  /* hero */
   .hero{background:var(--surface);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:22px 24px;display:flex;align-items:center;gap:26px;flex-wrap:wrap}
-  .hero .id .t{font-size:20px;font-weight:680;letter-spacing:-.01em}
+  .hero .id .t{font-size:20px;font-weight:680}
   .hero .id .m{color:var(--sub);font-size:13px;margin-top:3px}
   .hero .id .model{margin-top:12px;display:flex;align-items:center;gap:7px}
   .hero .id .model select{border:1px solid var(--border);border-radius:7px;padding:5px 8px;font-family:var(--mono);font-size:12px;background:var(--surface);color:var(--ink)}
@@ -85,19 +100,22 @@
   td{padding:7px 12px;text-align:right;border-bottom:1px solid #f1f4f8;font-variant-numeric:tabular-nums}
   tr:last-child td{border-bottom:0}
   .st-ok{color:var(--ok)} .st-warn{color:var(--warn)} .st-crit{color:var(--crit)} .st-info{color:var(--info)} .st-mut{color:var(--muted)}
-  .empty{color:var(--muted);text-align:center;padding:60px 0;font-size:14px}
 
-  /* ingest modal */
-  .modal{position:fixed;inset:0;background:rgba(20,27,43,.4);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}
+  .modal{position:fixed;inset:0;background:rgba(20,27,43,.4);display:none;align-items:center;justify-content:center;padding:20px;z-index:40}
   .modal.on{display:flex}
-  .sheet{background:var(--surface);border-radius:14px;box-shadow:0 20px 60px rgba(16,24,40,.3);width:100%;max-width:480px;padding:24px}
-  .sheet h3{margin:0 0 4px;font-size:17px}
-  .sheet p{margin:0 0 18px;color:var(--sub);font-size:13.5px}
-  .drop{border:1.5px dashed #c8d2e0;border-radius:11px;padding:34px 20px;text-align:center;cursor:pointer;transition:.15s;background:var(--surface-2)}
-  .drop.hot{border-color:var(--brand);background:var(--info-bg)}
-  .drop .big{font-weight:600;font-size:15px} .drop .sub{color:var(--muted);font-size:12px;margin-top:6px;font-family:var(--mono)}
+  .sheet{background:var(--surface);border-radius:14px;box-shadow:0 20px 60px rgba(16,24,40,.3);width:100%;max-width:420px;padding:24px}
+  .sheet h3{margin:0 0 4px;font-size:18px}
+  .sheet p{margin:0 0 16px;color:var(--sub);font-size:13.5px}
+  .sheet label{display:block;font-size:12px;font-weight:600;color:var(--sub);margin:12px 0 5px}
+  .sheet input{width:100%;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--sans)}
+  .sheet input:focus{outline:2px solid var(--info-bg);border-color:var(--brand)}
   .sheet .row{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .toggle{margin-top:14px;font-size:13px;color:var(--sub);text-align:center}
+  .toggle a{color:var(--brand);font-weight:600;cursor:pointer}
   .perr{color:var(--danger);font-size:13px;font-family:var(--mono);min-height:18px;margin-top:10px}
+  .drop{border:1.5px dashed #c8d2e0;border-radius:11px;padding:30px 20px;text-align:center;cursor:pointer;background:var(--surface-2);margin-top:6px}
+  .drop.hot{border-color:var(--brand);background:var(--info-bg)}
+  .drop .big{font-weight:600;font-size:14px} .drop .sub{color:var(--muted);font-size:12px;margin-top:6px;font-family:var(--mono)}
   .hidden{display:none}
 </style>
 </head>
@@ -106,20 +124,24 @@
     <div class="brand"><span class="mark"></span>Kaful <small>Tool Condition Monitoring</small></div>
     <div class="right">
       <span class="live" id="live"><span class="dot"></span>Live</span>
-      <button class="btn primary" id="openIngest">+ Ingest run</button>
+      <span id="authSlot"></span>
     </div>
   </header>
 
   <div class="body">
     <aside class="rail">
-      <h2 class="lbl">Tools</h2>
-      <div id="tools"></div>
+      <h2 class="lbl">Machines</h2>
+      <div id="rail"></div>
+      <div class="spacer"></div>
+      <div id="railFoot"></div>
     </aside>
-
     <main>
       <div class="wrap" id="wrap">
-        <div class="empty" id="empty">Select a tool to begin monitoring.</div>
-
+        <div class="empty" id="empty">
+          <h3>Welcome to Kaful</h3>
+          <p id="emptyMsg">Select a tool from the demo machine to watch live wear and remaining-useful-life estimation.</p>
+          <div id="emptyActions"></div>
+        </div>
         <div id="mon" class="hidden">
           <div class="hero">
             <div class="id">
@@ -139,9 +161,8 @@
               <div class="k"><div class="lbl">Failure threshold</div><div class="v">200 µm</div></div>
             </div>
           </div>
-
           <div class="card">
-            <div class="cap"><span class="lbl">Flank wear — recovered from force</span>
+            <div class="cap"><span class="lbl">Flank wear — recovered from signal</span>
               <span class="legend"><i class="s">— estimate</i><i class="tr">-- measured</i><i class="th">— failure</i></span></div>
             <canvas id="wear"></canvas>
           </div>
@@ -162,64 +183,147 @@
     </main>
   </div>
 
-  <!-- ingest modal -->
-  <div class="modal" id="modal">
+  <!-- auth modal -->
+  <div class="modal" id="authModal">
     <div class="sheet">
-      <h3>Ingest a tool run</h3>
-      <p>Upload cut waveforms (7-channel headerless CSVs, one file per cut). We extract features, deploy the reference model, and begin monitoring.</p>
+      <h3 id="authTitle">Sign in</h3>
+      <p id="authSub">Sign in to create machines and stream your own tool data.</p>
+      <label>Email</label><input id="authEmail" type="email" autocomplete="email"/>
+      <label>Password</label><input id="authPass" type="password" autocomplete="current-password"/>
+      <div class="perr" id="authErr"></div>
+      <div class="row">
+        <button class="btn" id="authCancel">Cancel</button>
+        <button class="btn primary" id="authSubmit">Sign in</button>
+      </div>
+      <div class="toggle" id="authToggle"></div>
+    </div>
+  </div>
+
+  <!-- new machine modal -->
+  <div class="modal" id="machineModal">
+    <div class="sheet">
+      <h3>New machine</h3>
+      <p>Create a machine, then stream tool runs into it.</p>
+      <label>Name</label><input id="machineName" placeholder="e.g. Haas VF-2 · spindle 3"/>
+      <div class="perr" id="machineErr"></div>
+      <div class="row">
+        <button class="btn" id="machineCancel">Cancel</button>
+        <button class="btn primary" id="machineCreate">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ingest modal -->
+  <div class="modal" id="ingestModal">
+    <div class="sheet">
+      <h3>Stream a run</h3>
+      <p id="ingestSub">Upload cut waveforms (7-channel headerless CSVs, one per cut). We extract features, deploy the model, and monitor it live.</p>
       <div class="drop" id="drop">
         <div class="big">Drop cut files here</div>
-        <div class="sub">or click to browse · max 400 cuts</div>
+        <div class="sub">or click to browse · keep it small on the demo host</div>
         <input id="file" type="file" accept=".csv" multiple class="hidden"/>
       </div>
-      <div class="perr" id="perr"></div>
-      <div class="row"><button class="btn" id="cancelIngest">Cancel</button></div>
+      <div class="perr" id="ingestErr"></div>
+      <div class="row"><button class="btn" id="ingestCancel">Cancel</button></div>
     </div>
   </div>
 
 <script>
 const THRESH=200;
-let runs=[], cur=null, es=null;
 const $=id=>document.getElementById(id);
+let me=null, machines=[], runs=[], cur=null, es=null, ingestTarget=null;
+const api=(url,opts={})=>fetch(url,{credentials:"same-origin",...opts});
 
-// ---------- runs / rail ----------
-async function loadRuns(selectId){
-  const data=await fetch("/runs").then(r=>r.json());
-  runs=data.runs;
-  const box=$("tools"); box.innerHTML="";
-  const labeled=runs.filter(r=>r.has_labels), uploads=runs.filter(r=>!r.has_labels);
-  const render=list=>list.forEach(r=>{
-    const b=document.createElement("button"); b.className="tool"+(cur&&cur.run_id===r.run_id?" sel":"");
-    b.innerHTML=`<div class="r1"><span class="sdot"></span><span class="name">${r.run_id}</span></div>`+
-      `<div class="meta">${r.machine_id} · ${r.n_cuts} cuts${r.has_labels?"":" · unlabeled"}</div>`;
-    b.onclick=()=>select(r); box.appendChild(b);
-  });
-  render(labeled);
-  if(uploads.length){ const d=document.createElement("div"); d.className="divider"; box.appendChild(d);
-    const h=document.createElement("div"); h.className="lbl"; h.style.margin="0 8px 8px"; h.textContent="Uploaded"; box.appendChild(h); render(uploads); }
-  const pick = selectId ? runs.find(r=>r.run_id===selectId) : (cur||labeled[0]||runs[0]);
-  if(pick) select(pick);
+// ---------------- boot ----------------
+async function init(){
+  try{ const r=await api("/auth/me"); me = r.ok ? await r.json() : null; }catch{ me=null; }
+  renderAuth();
+  await loadRail();
+}
+function renderAuth(){
+  const slot=$("authSlot");
+  if(me){
+    slot.innerHTML=`<div class="acct"><button class="who" id="acctBtn">
+      <span class="av">${(me.email[0]||"?").toUpperCase()}</span>${me.email}</button>
+      <div class="menu" id="acctMenu"><div class="email">${me.email}</div>
+      <button id="logoutBtn">Log out</button></div></div>`;
+    $("acctBtn").onclick=e=>{e.stopPropagation();$("acctMenu").classList.toggle("on");};
+    $("logoutBtn").onclick=async()=>{ await api("/auth/logout",{method:"POST"}); location.reload(); };
+  }else{
+    slot.innerHTML=`<button class="btn primary" id="signinBtn">Sign in</button>`;
+    $("signinBtn").onclick=()=>openAuth("login");
+  }
+}
+document.addEventListener("click",()=>{ const m=$("acctMenu"); if(m) m.classList.remove("on"); });
+
+// ---------------- rail ----------------
+async function loadRail(selectRun){
+  const [mR,rR]=await Promise.all([api("/machines"),api("/runs")]);
+  machines=(await mR.json()).machines;
+  runs=(await rR.json()).runs;
+  // system machines first, then owned
+  machines.sort((a,b)=> (a.is_system===b.is_system) ? 0 : (a.is_system?-1:1));
+  const rail=$("rail"); rail.innerHTML="";
+  for(const m of machines){
+    const mine=runs.filter(r=>r.machine_id===m.machine_id);
+    const g=document.createElement("div"); g.className="mgroup";
+    const head=document.createElement("div"); head.className="mhead";
+    head.innerHTML=`<span>${m.name||m.machine_id}</span>`+
+      (m.is_system?`<span class="badge">demo</span>`:``);
+    if(!m.is_system && me){
+      const b=document.createElement("button"); b.className="stream"; b.textContent="+ stream run";
+      b.onclick=()=>openIngest(m.machine_id); head.appendChild(b);
+    }
+    g.appendChild(head);
+    if(mine.length===0){
+      const e=document.createElement("div"); e.className="mempty";
+      e.textContent = m.is_system ? "no runs" : "no runs yet — stream one";
+      g.appendChild(e);
+    }
+    for(const r of mine){
+      const b=document.createElement("button"); b.className="tool"+(cur&&cur.run_id===r.run_id?" sel":"");
+      b.innerHTML=`<div class="name">${r.run_id}</div><div class="meta">${r.n_cuts} cuts${r.has_labels?"":" · unlabeled"}</div>`;
+      b.onclick=()=>select(r); g.appendChild(b);
+    }
+    rail.appendChild(g);
+  }
+  // rail footer: new machine (authed) or sign-in CTA (guest)
+  const foot=$("railFoot");
+  if(me){ foot.innerHTML=`<button class="newm" id="newMachineBtn">+ New machine</button>`;
+    $("newMachineBtn").onclick=openMachine;
+  }else{ foot.innerHTML=`<div class="signin-cta"><p>You're viewing the demo. Sign in to create machines and stream your own tool data.</p><button class="btn primary" id="ctaSignin">Sign in / Sign up</button></div>`;
+    $("ctaSignin").onclick=()=>openAuth("login");
+  }
+  const pick = selectRun ? runs.find(r=>r.run_id===selectRun) : (cur||runs[0]);
+  if(pick) select(pick); else renderEmpty();
+}
+function renderEmpty(){
+  $("mon").classList.add("hidden"); $("empty").classList.remove("hidden");
+  const hasOwn=machines.some(m=>!m.is_system);
+  if(me && !hasOwn){ $("emptyMsg").textContent="Create your first machine, then stream a tool run into it — or explore the demo on the left.";
+    $("emptyActions").innerHTML=`<button class="btn primary" id="ea1">+ New machine</button>`; $("ea1").onclick=openMachine;
+  }else{ $("emptyMsg").textContent="Select a tool from the left to watch live wear and remaining-useful-life estimation."; $("emptyActions").innerHTML=""; }
 }
 
+function machineOf(id){ return machines.find(m=>m.machine_id===id); }
 function modelOptions(run){
   const sel=$("h-model"); sel.innerHTML="";
-  if(run.has_labels){ sel.add(new Option("self-fit","self")); }
+  if(run.has_labels) sel.add(new Option("self-fit","self"));
   runs.filter(r=>r.has_labels).forEach(r=>{ if(r.run_id!==run.run_id||!run.has_labels) sel.add(new Option(`reference: ${r.run_id}`, r.run_id)); });
-  if(!run.has_labels) sel.value = runs.find(r=>r.has_labels&&r.run_id==="c1") ? "c1" : sel.options[0]?.value;
+  if(!run.has_labels){ const c1=runs.find(r=>r.has_labels&&r.run_id==="c1"); sel.value=c1?"c1":(sel.options[0]?.value); }
 }
-
 function select(run){
   cur=run;
   document.querySelectorAll(".tool").forEach(t=>t.classList.toggle("sel", t.querySelector(".name").textContent===run.run_id));
+  const m=machineOf(run.machine_id);
   $("empty").classList.add("hidden"); $("mon").classList.remove("hidden");
   $("h-tool").textContent="Tool "+run.run_id;
-  $("h-machine").textContent=run.machine_id+" · cnc milling"+(run.active?" · active":"");
-  modelOptions(run);
-  startStream();
+  $("h-machine").textContent=(m?(m.name||m.machine_id):run.machine_id)+" · cnc milling"+(run.active?" · active":"");
+  modelOptions(run); startStream();
 }
-$("h-model").onchange=startStream;
+$("h-model").onchange=()=>{ if(cur) startStream(); };
 
-// ---------- streaming ----------
+// ---------------- streaming + charts ----------------
 let cuts=[],wm=[],wlo=[],whi=[],wt=[],rc=[],rmed=[],rlo=[],rhi=[],N=0;
 function resetSeries(){ cuts=[];wm=[];wlo=[];whi=[];wt=[];rc=[];rmed=[];rlo=[];rhi=[];N=0; $("feed").innerHTML=""; }
 function health(wear,rul,cens){
@@ -231,8 +335,7 @@ function health(wear,rul,cens){
 }
 function startStream(){
   if(es) es.close(); resetSeries(); draw();
-  const model=$("h-model").value;
-  const ref = model==="self" ? null : model;
+  const model=$("h-model").value, ref = model==="self"?null:model;
   const url=`/machines/${cur.machine_id}/runs/${cur.run_id}/replay`+(ref?`?reference=${ref}`:"");
   $("live").classList.add("on");
   es=new EventSource(url);
@@ -241,91 +344,94 @@ function startStream(){
     if(d.type==="meta"){ N=d.n; draw(); return; }
     if(d.type==="done"){ es.close(); $("live").classList.remove("on"); return; }
     cuts.push(d.cut);wm.push(d.wear_mean);wlo.push(d.wear_lo);whi.push(d.wear_hi);wt.push(d.wear_true);
-    const wearout=d.censored<0.5;
-    if(wearout){ rc.push(d.cut);rmed.push(d.rul_median);rlo.push(d.rul_lo);rhi.push(d.rul_hi); }
-    const hs=health(d.wear_mean,wearout?d.rul_median:999,d.censored);
-    $("h-cut").textContent=`${d.cut} / ${N}`;
-    $("h-wear").textContent=d.wear_mean.toFixed(0);
+    const wo=d.censored<0.5;
+    if(wo){ rc.push(d.cut);rmed.push(d.rul_median);rlo.push(d.rul_lo);rhi.push(d.rul_hi); }
+    const hs=health(d.wear_mean,wo?d.rul_median:999,d.censored);
+    $("h-cut").textContent=`${d.cut} / ${N}`; $("h-wear").textContent=d.wear_mean.toFixed(0);
     $("h-pill").className="pill "+hs.c; $("h-status").textContent=hs.t;
-    if(wearout){ $("h-rul").textContent="~"+d.rul_median.toFixed(0);
-      $("h-ci").textContent=`90% CI  ${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)} cuts`; }
+    if(wo){ $("h-rul").textContent="~"+d.rul_median.toFixed(0); $("h-ci").textContent=`90% CI  ${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)} cuts`; }
     else{ $("h-rul").textContent="—"; $("h-ci").textContent=`${(d.censored*100).toFixed(0)}% of futures beyond horizon`; }
-    // feed (newest on top)
     const cls=hs.c==="ok"?"st-ok":hs.c==="warn"?"st-warn":hs.c==="crit"?"st-crit":"st-info";
     const tr=document.createElement("tr");
     tr.innerHTML=`<td>${d.cut}</td><td>${d.wear_mean.toFixed(1)}</td>`+
-      (wearout?`<td>${d.rul_median.toFixed(0)}</td><td>${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)}</td>`
-              :`<td class="st-mut">—</td><td class="st-mut">—</td>`)+
+      (wo?`<td>${d.rul_median.toFixed(0)}</td><td>${d.rul_lo.toFixed(0)}–${d.rul_hi.toFixed(0)}</td>`:`<td class="st-mut">—</td><td class="st-mut">—</td>`)+
       `<td class="${cls}">${hs.t.split(" · ")[0]}</td>`;
-    const fb=$("feed"); fb.insertBefore(tr, fb.firstChild);
-    draw();
+    const fb=$("feed"); fb.insertBefore(tr,fb.firstChild); draw();
   };
   es.onerror=()=>{ es.close(); $("live").classList.remove("on"); };
 }
-
-// ---------- charts ----------
-function fit(cv){const r=cv.getBoundingClientRect();const dpr=window.devicePixelRatio||1;
-  cv.width=Math.max(1,r.width*dpr);cv.height=Math.max(1,r.height*dpr);
-  const ctx=cv.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w:r.width,h:r.height};}
+function fit(cv){const r=cv.getBoundingClientRect();const dpr=window.devicePixelRatio||1;cv.width=Math.max(1,r.width*dpr);cv.height=Math.max(1,r.height*dpr);const ctx=cv.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w:r.width,h:r.height};}
 const X=(c,p,w,xm)=>p.l+(w-p.l-p.r)*((c-1)/Math.max(1,xm-1));
 const Y=(v,p,h,y0,y1)=>h-p.b-(h-p.t-p.b)*(v-y0)/(y1-y0);
-function axes(ctx,w,h,p,xm,y0,y1,ty,fmt){ctx.font="11px "+getComputedStyle(document.body).getPropertyValue('--mono');ctx.textBaseline="middle";
-  ctx.strokeStyle="#eef1f6";ctx.fillStyle="#98a3b3";ctx.lineWidth=1;
-  for(let i=0;i<=ty;i++){const yv=y0+(y1-y0)*i/ty,y=Y(yv,p,h,y0,y1);
-    ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(w-p.r,y);ctx.stroke();ctx.textAlign="right";ctx.fillText(fmt(yv),p.l-8,y);}
-  ctx.textAlign="center";const step=Math.max(1,Math.round(xm/6));
-  for(let gx=0;gx<=xm;gx+=step){const x=p.l+(w-p.l-p.r)*(gx/Math.max(1,xm));ctx.fillText(gx,x,h-p.b+14);}}
-function bandp(ctx,xs,lo,hi,p,w,h,xm,y0,y1,fill){if(xs.length<2)return;ctx.beginPath();
-  xs.forEach((c,i)=>{const x=X(c,p,w,xm),y=Y(hi[i],p,h,y0,y1);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
-  for(let i=xs.length-1;i>=0;i--){ctx.lineTo(X(xs[i],p,w,xm),Y(lo[i],p,h,y0,y1));}
-  ctx.closePath();ctx.fillStyle=fill;ctx.fill();}
-function linep(ctx,xs,ys,p,w,h,xm,y0,y1,color,dash,width){
-  const pts=xs.map((c,i)=>[c,ys[i]]).filter(q=>q[1]!=null);if(!pts.length)return;
-  ctx.save();ctx.setLineDash(dash||[]);ctx.lineWidth=width||2;ctx.strokeStyle=color;ctx.lineJoin="round";
-  ctx.beginPath();pts.forEach((q,i)=>{const x=X(q[0],p,w,xm),y=Y(q[1],p,h,y0,y1);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
-  ctx.stroke();ctx.restore();}
-function thline(ctx,val,p,w,h,y0,y1,color,label){const y=Y(val,p,h,y0,y1);
-  ctx.save();ctx.setLineDash([6,5]);ctx.strokeStyle=color;ctx.lineWidth=1.3;
-  ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(w-p.r,y);ctx.stroke();ctx.setLineDash([]);
-  ctx.fillStyle=color;ctx.textAlign="left";ctx.textBaseline="bottom";ctx.font="11px "+getComputedStyle(document.body).getPropertyValue('--mono');
-  ctx.fillText(label,p.l+4,y-3);ctx.restore();}
+function axes(ctx,w,h,p,xm,y0,y1,ty,fmt){ctx.font="11px "+getComputedStyle(document.body).getPropertyValue('--mono');ctx.textBaseline="middle";ctx.strokeStyle="#eef1f6";ctx.fillStyle="#98a3b3";ctx.lineWidth=1;
+  for(let i=0;i<=ty;i++){const yv=y0+(y1-y0)*i/ty,y=Y(yv,p,h,y0,y1);ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(w-p.r,y);ctx.stroke();ctx.textAlign="right";ctx.fillText(fmt(yv),p.l-8,y);}
+  ctx.textAlign="center";const step=Math.max(1,Math.round(xm/6));for(let gx=0;gx<=xm;gx+=step){const x=p.l+(w-p.l-p.r)*(gx/Math.max(1,xm));ctx.fillText(gx,x,h-p.b+14);}}
+function bandp(ctx,xs,lo,hi,p,w,h,xm,y0,y1,fill){if(xs.length<2)return;ctx.beginPath();xs.forEach((c,i)=>{const x=X(c,p,w,xm),y=Y(hi[i],p,h,y0,y1);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});for(let i=xs.length-1;i>=0;i--){ctx.lineTo(X(xs[i],p,w,xm),Y(lo[i],p,h,y0,y1));}ctx.closePath();ctx.fillStyle=fill;ctx.fill();}
+function linep(ctx,xs,ys,p,w,h,xm,y0,y1,color,dash,width){const pts=xs.map((c,i)=>[c,ys[i]]).filter(q=>q[1]!=null);if(!pts.length)return;ctx.save();ctx.setLineDash(dash||[]);ctx.lineWidth=width||2;ctx.strokeStyle=color;ctx.lineJoin="round";ctx.beginPath();pts.forEach((q,i)=>{const x=X(q[0],p,w,xm),y=Y(q[1],p,h,y0,y1);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();ctx.restore();}
+function thline(ctx,val,p,w,h,y0,y1,color,label){const y=Y(val,p,h,y0,y1);ctx.save();ctx.setLineDash([6,5]);ctx.strokeStyle=color;ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(p.l,y);ctx.lineTo(w-p.r,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=color;ctx.textAlign="left";ctx.textBaseline="bottom";ctx.font="11px "+getComputedStyle(document.body).getPropertyValue('--mono');ctx.fillText(label,p.l+4,y-3);ctx.restore();}
 function draw(){ if($("mon").classList.contains("hidden"))return; drawWear(); drawRul(); }
-function drawWear(){const {ctx,w,h}=fit($("wear"));const p={l:46,r:14,t:12,b:22},xm=Math.max(N,10);
-  ctx.clearRect(0,0,w,h);axes(ctx,w,h,p,xm,0,220,5,v=>v.toFixed(0));
-  bandp(ctx,cuts,wlo,whi,p,w,h,xm,0,220,"rgba(13,148,136,.13)");
-  thline(ctx,THRESH,p,w,h,0,220,"#dc2626","0.200 mm failure");
-  linep(ctx,cuts,wt,p,w,h,xm,0,220,"#586475",[5,4],1.4);
-  linep(ctx,cuts,wm,p,w,h,xm,0,220,"#0d9488",[],2.4);}
-function drawRul(){const {ctx,w,h}=fit($("rul"));const p={l:46,r:14,t:12,b:22},xm=Math.max(N,10);
-  let ym=60;for(const v of rhi)if(v<600)ym=Math.max(ym,v);ym=Math.max(60,Math.ceil(ym/20)*20);
-  ctx.clearRect(0,0,w,h);axes(ctx,w,h,p,xm,0,ym,4,v=>v.toFixed(0));
-  bandp(ctx,rc,rlo.map(v=>Math.min(v,ym)),rhi.map(v=>Math.min(v,ym)),p,w,h,xm,0,ym,"rgba(180,83,9,.11)");
-  linep(ctx,rc,rmed,p,w,h,xm,0,ym,"#b45309",[],2.4);}
+function drawWear(){const {ctx,w,h}=fit($("wear"));const p={l:46,r:14,t:12,b:22},xm=Math.max(N,10);ctx.clearRect(0,0,w,h);axes(ctx,w,h,p,xm,0,220,5,v=>v.toFixed(0));bandp(ctx,cuts,wlo,whi,p,w,h,xm,0,220,"rgba(13,148,136,.13)");thline(ctx,THRESH,p,w,h,0,220,"#dc2626","0.200 mm failure");linep(ctx,cuts,wt,p,w,h,xm,0,220,"#586475",[5,4],1.4);linep(ctx,cuts,wm,p,w,h,xm,0,220,"#0d9488",[],2.4);}
+function drawRul(){const {ctx,w,h}=fit($("rul"));const p={l:46,r:14,t:12,b:22},xm=Math.max(N,10);let ym=60;for(const v of rhi)if(v<600)ym=Math.max(ym,v);ym=Math.max(60,Math.ceil(ym/20)*20);ctx.clearRect(0,0,w,h);axes(ctx,w,h,p,xm,0,ym,4,v=>v.toFixed(0));bandp(ctx,rc,rlo.map(v=>Math.min(v,ym)),rhi.map(v=>Math.min(v,ym)),p,w,h,xm,0,ym,"rgba(180,83,9,.11)");linep(ctx,rc,rmed,p,w,h,xm,0,ym,"#b45309",[],2.4);}
 window.addEventListener("resize",draw);
 
-// ---------- ingest modal ----------
-const modal=$("modal"),drop=$("drop"),file=$("file");
-$("openIngest").onclick=()=>{ $("perr").textContent=""; modal.classList.add("on"); };
-$("cancelIngest").onclick=()=>modal.classList.remove("on");
-modal.onclick=e=>{ if(e.target===modal) modal.classList.remove("on"); };
+// ---------------- auth modal ----------------
+let authMode="login";
+function openAuth(mode){ authMode=mode; $("authErr").textContent=""; $("authEmail").value=""; $("authPass").value="";
+  $("authTitle").textContent = mode==="login"?"Sign in":"Create account";
+  $("authSub").textContent = mode==="login"?"Sign in to create machines and stream your own tool data.":"Create an account to build machines and stream tool data.";
+  $("authSubmit").textContent = mode==="login"?"Sign in":"Sign up";
+  $("authToggle").innerHTML = mode==="login"?`No account? <a id="toSignup">Sign up</a>`:`Have an account? <a id="toLogin">Sign in</a>`;
+  const t=$("toSignup")||$("toLogin"); t.onclick=()=>openAuth(mode==="login"?"signup":"login");
+  $("authModal").classList.add("on"); $("authEmail").focus();
+}
+$("authCancel").onclick=()=>$("authModal").classList.remove("on");
+$("authModal").onclick=e=>{ if(e.target===$("authModal")) $("authModal").classList.remove("on"); };
+$("authSubmit").onclick=async()=>{
+  const email=$("authEmail").value.trim(), password=$("authPass").value;
+  const path=authMode==="login"?"/auth/login":"/auth/signup";
+  try{
+    const r=await api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});
+    if(!r.ok){ const j=await r.json().catch(()=>({detail:"failed"})); throw new Error(j.detail||"failed"); }
+    location.reload();
+  }catch(err){ $("authErr").textContent=err.message; }
+};
+
+// ---------------- new machine modal ----------------
+function openMachine(){ $("machineErr").textContent=""; $("machineName").value=""; $("machineModal").classList.add("on"); $("machineName").focus(); }
+$("machineCancel").onclick=()=>$("machineModal").classList.remove("on");
+$("machineModal").onclick=e=>{ if(e.target===$("machineModal")) $("machineModal").classList.remove("on"); };
+$("machineCreate").onclick=async()=>{
+  const name=$("machineName").value.trim();
+  try{
+    const r=await api("/machines",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+    if(!r.ok){ const j=await r.json().catch(()=>({detail:"failed"})); throw new Error(j.detail||"failed"); }
+    $("machineModal").classList.remove("on"); await loadRail();
+  }catch(err){ $("machineErr").textContent=err.message; }
+};
+
+// ---------------- ingest modal ----------------
+const drop=$("drop"), file=$("file");
+function openIngest(machineId){ ingestTarget=machineId; $("ingestErr").textContent=""; $("ingestModal").classList.add("on"); }
+$("ingestCancel").onclick=()=>$("ingestModal").classList.remove("on");
+$("ingestModal").onclick=e=>{ if(e.target===$("ingestModal")) $("ingestModal").classList.remove("on"); };
 drop.onclick=()=>file.click();
 ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hot");}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
 drop.addEventListener("drop",e=>{ if(e.dataTransfer.files.length) upload(e.dataTransfer.files); });
 file.onchange=()=>{ if(file.files.length) upload(file.files); };
 async function upload(list){
-  $("perr").textContent=`uploading ${list.length} cut${list.length>1?"s":""}…`;
+  $("ingestErr").textContent=`uploading ${list.length} cut${list.length>1?"s":""}…`;
   const fd=new FormData(); [...list].forEach(f=>fd.append("files",f));
+  if(ingestTarget) fd.append("machine_id",ingestTarget);
   try{
-    const res=await fetch("/analyze",{method:"POST",body:fd});
-    if(!res.ok){ const j=await res.json().catch(()=>({detail:res.statusText})); throw new Error(j.detail||"failed"); }
-    const d=await res.json();
-    modal.classList.remove("on"); file.value="";
-    await loadRuns(d.run_id);
-  }catch(err){ $("perr").textContent=err.message; }
+    const r=await api("/analyze",{method:"POST",body:fd});
+    if(!r.ok){ const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail||"failed"); }
+    const d=await r.json(); $("ingestModal").classList.remove("on"); file.value="";
+    await loadRail(d.run_id);
+  }catch(err){ $("ingestErr").textContent=err.message; }
 }
 
-loadRuns();
+init();
 </script>
 </body>
 </html>

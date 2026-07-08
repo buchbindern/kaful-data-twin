@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime, timezone
 
 import numpy as np
-from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File, Depends
+from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
@@ -122,6 +122,16 @@ def create_app(store_dir: str = "var") -> FastAPI:
         if m is None or m.owner_id != user.user_id:
             raise HTTPException(status_code=404, detail=f"machine {machine_id!r} not found")
         return m
+
+    @app.get("/machines")
+    def list_machines_endpoint(user: User = Depends(optional_user)):
+        out = []
+        for m in data_store.list_machines():
+            if not _visible(m, user):
+                continue
+            out.append({"machine_id": m.machine_id, "name": m.name,
+                        "machine_type": m.machine_type, "is_system": m.owner_id is None})
+        return {"machines": out}
 
     @app.post("/machines")
     def create_machine_endpoint(body: NewMachineRequest, user: User = Depends(require_user)):
@@ -258,7 +268,7 @@ def create_app(store_dir: str = "var") -> FastAPI:
 
     @app.post("/analyze")
     async def analyze(files: list[UploadFile] = File(...), reference: str = "c1",
-                      user: User = Depends(require_user)):
+                      machine_id: str | None = Form(None), user: User = Depends(require_user)):
         """Upload cut files -> extract features -> create a run -> deploy the reference
         model. Returns a run_id the dashboard then streams via /replay."""
         if not files:
@@ -269,12 +279,15 @@ def create_app(store_dir: str = "var") -> FastAPI:
         if len(files) > 400:
             raise HTTPException(status_code=400, detail="too many files (max 400 cuts per upload)")
 
-        uploads_id = f"uploads-{user.user_id}"
-        if data_store.get_machine(uploads_id) is None:
-            data_store.create_machine(Machine(uploads_id, "cnc_milling",
-                                              name="Uploaded tools", owner_id=user.user_id))
+        if machine_id:
+            target_id = _writable_machine(machine_id, user).machine_id
+        else:
+            target_id = f"uploads-{user.user_id}"
+            if data_store.get_machine(target_id) is None:
+                data_store.create_machine(Machine(target_id, "cnc_milling",
+                                                  name="Uploaded tools", owner_id=user.user_id))
         run_id = "upload-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
-        data_store.create_run(Run(run_id, uploads_id))
+        data_store.create_run(Run(run_id, target_id))
 
         extractor = FeatureExtractor(PHM_CHANNELS)
         ordered = sorted(files, key=lambda f: f.filename or "")
@@ -294,7 +307,7 @@ def create_app(store_dir: str = "var") -> FastAPI:
             n += 1
 
         data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
-        return {"run_id": run_id, "machine_id": uploads_id, "n_cuts": n, "reference": reference}
+        return {"run_id": run_id, "machine_id": target_id, "n_cuts": n, "reference": reference}
 
     @app.get("/machines/{machine_id}/runs/{run_id}/replay")
     def replay(machine_id: str, run_id: str, reference: str | None = None,
