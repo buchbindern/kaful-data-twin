@@ -29,8 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from domain.models import (
-    Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState, WearLabel,
-)
+    Machine, Run, Cut, FeatureRecord, RULPrediction, TwinState, WearLabel, User, Session)
 from domain.stores import DataStore
 
 
@@ -93,6 +92,20 @@ CREATE TABLE IF NOT EXISTS twin_state (
     params_json TEXT   NOT NULL,
     particles  BLOB,
     updated_at TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id       TEXT PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(user_id),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS wear_labels (
@@ -169,6 +182,48 @@ class SQLiteDataStore(DataStore):
             "SELECT * FROM runs WHERE machine_id=? ORDER BY started_at DESC", (machine_id,)
         ).fetchall()
         return [self._row_to_run(r) for r in rows]
+
+    # ---------------- Auth (users + sessions) ----------------
+    def create_user(self, user: User) -> None:
+        self._conn.execute("INSERT INTO users VALUES (?,?,?,?)",
+            (user.user_id, user.email, user.password_hash, _dt(user.created_at)))
+        self._conn.commit()
+
+    def get_user_by_email(self, email: str):
+        row = self._conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+        return self._row_to_user(row) if row else None
+
+    def get_user(self, user_id: str):
+        row = self._conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return self._row_to_user(row) if row else None
+
+    def create_session(self, session: Session) -> None:
+        self._conn.execute("INSERT INTO sessions VALUES (?,?,?,?)",
+            (session.token, session.user_id, _dt(session.created_at), _dt(session.expires_at)))
+        self._conn.commit()
+
+    def get_valid_session(self, token: str, now=None):
+        from datetime import datetime, timezone
+        row = self._conn.execute("SELECT * FROM sessions WHERE token=?", (token,)).fetchone()
+        if row is None:
+            return None
+        sess = Session(row["token"], row["user_id"], _parse_dt(row["created_at"]),
+                       _parse_dt(row["expires_at"]))
+        if sess.expires_at <= (now or datetime.now(timezone.utc)):
+            return None
+        return sess
+
+    def delete_session(self, token: str) -> None:
+        self._conn.execute("DELETE FROM sessions WHERE token=?", (token,))
+        self._conn.commit()
+
+    def delete_user_sessions(self, user_id: str) -> None:
+        self._conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        self._conn.commit()
+
+    def _row_to_user(self, row) -> User:
+        return User(row["user_id"], row["email"], row["password_hash"],
+                    _parse_dt(row["created_at"]))
 
     def list_machines(self):
         rows = self._conn.execute("SELECT * FROM machines ORDER BY machine_id").fetchall()

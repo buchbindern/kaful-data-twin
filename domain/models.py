@@ -127,3 +127,21 @@ class WearLabel:
     run_id: str
     cut_index: int
     wear_mm: float
+
+
+@dataclass(frozen=True)
+class User:
+    """An account. Owns machines (multi-tenancy)."""
+    user_id: str
+    email: str
+    password_hash: str
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class Session:
+    """A server-side login session; its token lives in an httponly cookie."""
+    token: str
+    user_id: str
+    created_at: datetime
+    expires_at: datetime
