@@ -142,12 +142,27 @@ def _upload_files():
                        for row in np.random.default_rng(i).standard_normal((120, 7))),
              "text/csv")) for i in range(1, 3)]
 
-def test_uploads_get_isolated_unique_runs(client):
-    _signup(client)
-    r1 = client.post("/analyze", files=_upload_files()).json()
-    r2 = client.post("/analyze", files=_upload_files()).json()
-    assert r1["run_id"] != r2["run_id"] and r1["machine_id"].startswith("uploads-")
+def test_uploads_append_to_active_run(client):
+    mid = _owned_machine(client)
+    r1 = client.post("/analyze", files=_upload_files(), data={"machine_id": mid}).json()
+    r2 = client.post("/analyze", files=_upload_files(), data={"machine_id": mid}).json()
+    assert r1["run_id"] == r2["run_id"]                 # same continuous tool run
+    assert r2["n_cuts"] == r1["n_cuts"] + r2["added"]   # cuts accumulate
     assert client.get("/machines/phm2010/runs/c1/rul").status_code == 200   # system data intact
+
+def test_rename_machine(client):
+    mid = _owned_machine(client)
+    r = client.patch(f"/machines/{mid}", json={"name": "Renamed Cell"})
+    assert r.status_code == 200 and r.json()["name"] == "Renamed Cell"
+    assert any(m["machine_id"] == mid and m["name"] == "Renamed Cell"
+               for m in client.get("/machines").json()["machines"])
+
+def test_rename_requires_ownership(tmp_path):
+    _seed_store_with_twin(tmp_path)
+    app = create_app(store_dir=str(tmp_path))
+    a = TestClient(app); mid_a = _owned_machine(a, "a@test.com")
+    b = TestClient(app); _signup(b, "b@test.com")
+    assert b.patch(f"/machines/{mid_a}", json={"name": "hax"}).status_code == 404   # not B's machine
 
 
 # ---------------- multi-tenancy isolation ----------------

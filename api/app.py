@@ -20,6 +20,7 @@ from pathlib import Path
 import io
 import json
 import os
+import random
 import re
 import secrets
 import uuid
@@ -48,6 +49,10 @@ class Credentials(BaseModel):
 class NewMachineRequest(BaseModel):
     name: str | None = None
     machine_type: str | None = None
+
+
+class RenameRequest(BaseModel):
+    name: str | None = None
 
 
 class NewRunRequest(BaseModel):
@@ -159,6 +164,14 @@ def create_app(store_dir: str = "var") -> FastAPI:
         data_store.create_machine(Machine(machine_id, mtype, name=body.name, owner_id=user.user_id))
         return {"machine_id": machine_id, "name": body.name, "machine_type": mtype}
 
+    @app.patch("/machines/{machine_id}")
+    def rename_machine_endpoint(machine_id: str, body: RenameRequest,
+                                user: User = Depends(require_user)):
+        _writable_machine(machine_id, user)
+        name = (body.name or "").strip() or None
+        data_store.rename_machine(machine_id, name)
+        return {"machine_id": machine_id, "name": name}
+
     @app.post("/auth/signup")
     def signup(body: Credentials, request: Request, response: Response):
         if not signup_limiter.allow(_client_ip(request)):
@@ -183,7 +196,8 @@ def create_app(store_dir: str = "var") -> FastAPI:
     def login(body: Credentials, request: Request, response: Response):
         if not login_limiter.allow(_client_ip(request)):
             raise HTTPException(status_code=429, detail="too many attempts, please try again later")
-        data_store.delete_expired_sessions(datetime.now(timezone.utc))   # opportunistic cleanup
+        if random.random() < 0.05:                                       # occasional cleanup (keeps login fast)
+            data_store.delete_expired_sessions(datetime.now(timezone.utc))
         email = _normalize_email(body.email)
         user = data_store.get_user_by_email(email)
         if user is None or not verify_password(body.password, user.password_hash):
@@ -316,13 +330,25 @@ def create_app(store_dir: str = "var") -> FastAPI:
             if data_store.get_machine(target_id) is None:
                 data_store.create_machine(Machine(target_id, "cnc_milling",
                                                   name="Uploaded tools", owner_id=user.user_id))
-        run_id = "upload-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
-        data_store.create_run(Run(run_id, target_id))
+
+        # Append to the machine's ACTIVE run (its current tool's life); start one if none.
+        active = data_store.get_active_run(target_id)
+        if active is None:
+            run_id = "run-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
+            data_store.create_run(Run(run_id, target_id))
+            data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
+            start = 0
+        else:
+            run_id = active.run_id
+            start = len(data_store.read_all_features(run_id))
+            if data_store.load_twin_state(run_id) is None:
+                data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
 
         extractor = FeatureExtractor(PHM_CHANNELS)
         ordered = sorted(files, key=lambda f: f.filename or "")
-        n = 0
-        for i, uf in enumerate(ordered, start=1):
+        cuts, feats = [], []
+        for offset, uf in enumerate(ordered, start=1):
+            i = start + offset
             content = await uf.read()
             try:
                 arr = np.loadtxt(io.StringIO(content.decode("utf-8", "ignore")), delimiter=",")
@@ -332,12 +358,13 @@ def create_app(store_dir: str = "var") -> FastAPI:
             if arr.ndim != 2 or arr.shape[1] != len(PHM_CHANNELS):
                 raise HTTPException(status_code=400,
                                     detail=f"{uf.filename!r}: expected {len(PHM_CHANNELS)} columns, got shape {arr.shape}")
-            data_store.append_cut(Cut(run_id, i, f"upload/{run_id}/{i:06d}"))
-            data_store.append_features(FeatureRecord(run_id, i, extractor.extract(arr)))
-            n += 1
+            cuts.append(Cut(run_id, i, f"upload/{run_id}/{i:06d}"))
+            feats.append(FeatureRecord(run_id, i, extractor.extract(arr)))
 
-        data_store.save_twin_state(deploy_from_reference(data_store, reference, run_id))
-        return {"run_id": run_id, "machine_id": target_id, "n_cuts": n, "reference": reference}
+        data_store.append_cuts_bulk(cuts)          # one round trip instead of N
+        data_store.append_features_bulk(feats)
+        return {"run_id": run_id, "machine_id": target_id, "n_cuts": start + len(cuts),
+                "added": len(cuts), "reference": reference}
 
     @app.get("/machines/{machine_id}/runs/{run_id}/replay")
     def replay(machine_id: str, run_id: str, reference: str | None = None,

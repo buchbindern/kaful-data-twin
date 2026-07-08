@@ -123,6 +123,25 @@ class PostgresDataStore(DataStore):
                    (machine.machine_id, machine.machine_type, machine.name,
                     _dt(machine.created_at), machine.owner_id))
 
+    def rename_machine(self, machine_id: str, name) -> None:
+        self._exec("UPDATE machines SET name=%s WHERE machine_id=%s", (name, machine_id))
+
+    def _many(self, sql, rows):
+        with self._lock:
+            for attempt in (1, 2):
+                try:
+                    with self._conn.cursor() as cur:
+                        cur.executemany(sql, rows)
+                    return
+                except psycopg.OperationalError:
+                    if attempt == 2:
+                        raise
+                    try:
+                        self._conn.close()
+                    except Exception:
+                        pass
+                    self._conn = self._connect()
+
     def get_machine(self, machine_id: str) -> Optional[Machine]:
         r = self._one("SELECT * FROM machines WHERE machine_id=%s", (machine_id,))
         if r is None:
@@ -211,6 +230,10 @@ class PostgresDataStore(DataStore):
                    "VALUES (%s,%s,%s,%s)",
                    (cut.run_id, cut.cut_index, cut.waveform_key, _dt(cut.ingested_at)))
 
+    def append_cuts_bulk(self, cuts) -> None:
+        self._many("INSERT INTO cuts (run_id,cut_index,waveform_key,ingested_at) VALUES (%s,%s,%s,%s)",
+                   [(c.run_id, c.cut_index, c.waveform_key, _dt(c.ingested_at)) for c in cuts])
+
     def get_cut(self, run_id: str, cut_index: int) -> Optional[Cut]:
         r = self._one("SELECT * FROM cuts WHERE run_id=%s AND cut_index=%s", (run_id, cut_index))
         if r is None:
@@ -223,6 +246,12 @@ class PostgresDataStore(DataStore):
                    "VALUES (%s,%s,%s,%s)",
                    (record.run_id, record.cut_index, json.dumps(record.features),
                     _dt(record.extracted_at)))
+
+    def append_features_bulk(self, records) -> None:
+        self._many("INSERT INTO features (run_id,cut_index,features_json,extracted_at) "
+                   "VALUES (%s,%s,%s,%s)",
+                   [(r.run_id, r.cut_index, json.dumps(r.features), _dt(r.extracted_at))
+                    for r in records])
 
     def _row_to_features(self, r) -> FeatureRecord:
         return FeatureRecord(r["run_id"], r["cut_index"], json.loads(r["features_json"]),

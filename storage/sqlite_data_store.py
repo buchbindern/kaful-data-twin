@@ -144,6 +144,10 @@ class SQLiteDataStore(DataStore):
         )
         self._conn.commit()
 
+    def rename_machine(self, machine_id: str, name) -> None:
+        self._conn.execute("UPDATE machines SET name=? WHERE machine_id=?", (name, machine_id))
+        self._conn.commit()
+
     def get_machine(self, machine_id: str) -> Optional[Machine]:
         row = self._conn.execute(
             "SELECT * FROM machines WHERE machine_id=?", (machine_id,)
@@ -249,6 +253,12 @@ class SQLiteDataStore(DataStore):
         )
         self._conn.commit()
 
+    def append_cuts_bulk(self, cuts) -> None:
+        self._conn.executemany(
+            "INSERT INTO cuts VALUES (?,?,?,?)",
+            [(c.run_id, c.cut_index, c.waveform_key, _dt(c.ingested_at)) for c in cuts])
+        self._conn.commit()
+
     def get_cut(self, run_id: str, cut_index: int) -> Optional[Cut]:
         row = self._conn.execute(
             "SELECT * FROM cuts WHERE run_id=? AND cut_index=?", (run_id, cut_index)
@@ -265,6 +275,12 @@ class SQLiteDataStore(DataStore):
             (record.run_id, record.cut_index, json.dumps(record.features),
              _dt(record.extracted_at)),
         )
+        self._conn.commit()
+
+    def append_features_bulk(self, records) -> None:
+        self._conn.executemany(
+            "INSERT INTO features VALUES (?,?,?,?)",
+            [(r.run_id, r.cut_index, json.dumps(r.features), _dt(r.extracted_at)) for r in records])
         self._conn.commit()
 
     def _row_to_features(self, row: sqlite3.Row) -> FeatureRecord:
