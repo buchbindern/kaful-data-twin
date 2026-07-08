@@ -12,14 +12,21 @@ from domain.models import (Machine, Run, Cut, FeatureRecord, RULPrediction, Twin
                             WearLabel, User, Session)
 from storage import SQLiteDataStore
 
-_DSN = os.environ.get("KAFUL_TEST_PG") or os.environ.get("DATABASE_URL")
+# SAFETY: use ONLY an explicit throwaway test DSN. Never fall back to DATABASE_URL
+# (that is production). And refuse any database whose name does not contain "test",
+# because this fixture DROPs the schema.
+_DSN = os.environ.get("KAFUL_TEST_PG")
 
-pytestmark = pytest.mark.skipif(not _DSN, reason="no Postgres DSN in env")
+pytestmark = pytest.mark.skipif(not _DSN, reason="no KAFUL_TEST_PG in env")
 
 
 def _fresh_pg():
     import psycopg
     from storage.postgres_data_store import PostgresDataStore
+    dbname = _DSN.rsplit("/", 1)[-1].split("?")[0].lower()
+    assert "test" in dbname, (
+        f"refusing to DROP SCHEMA on database {dbname!r}: KAFUL_TEST_PG must point at a "
+        "throwaway database whose name contains 'test'")
     with psycopg.connect(_DSN, autocommit=True) as c:
         c.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
     return PostgresDataStore(_DSN)

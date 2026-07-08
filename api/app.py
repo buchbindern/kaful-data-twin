@@ -109,7 +109,8 @@ def create_app(store_dir: str = "var") -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"status": "ok"}
+        store = "postgres" if type(data_store).__name__.startswith("Postgres") else "sqlite"
+        return {"status": "ok", "store": store}
 
     # ---------------- Auth ----------------
     def optional_user(request: Request):
