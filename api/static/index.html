@@ -28,6 +28,11 @@
   .brand small{color:var(--muted);font-weight:500;font-size:13px}
   header .right{margin-left:auto;display:flex;align-items:center;gap:12px;position:relative}
   .live{display:none;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--signal)}
+  .howlink{font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;text-decoration:none;border-bottom:1px dashed var(--border)}
+  .howlink:hover{color:var(--brand);border-color:var(--brand)}
+  ol.how{margin:8px 0 2px;padding-left:18px}
+  ol.how li{margin:8px 0;font-size:13px;line-height:1.5;color:var(--text)}
+  ol.how b{font-weight:640}
   .live.on{display:flex}
   .live .dot{width:8px;height:8px;border-radius:50%;background:var(--signal);animation:pulse 1.4s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
@@ -128,6 +133,7 @@
     <div class="brand"><span class="mark"></span>Kaful <small>Tool Condition Monitoring</small></div>
     <div class="right">
       <span class="live" id="live"><span class="dot"></span>Live</span>
+      <a class="howlink" id="howBtn" role="button" tabindex="0">How it works</a>
       <span id="authSlot"></span>
     </div>
   </header>
@@ -242,6 +248,21 @@
       </div>
       <div class="perr" id="ingestErr"></div>
       <div class="row"><button class="btn" id="ingestCancel">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- how-it-works modal -->
+  <div class="modal" id="howModal">
+    <div class="sheet">
+      <h3>How it works</h3>
+      <p>Kaful turns raw CNC tool-sensor signals into a live remaining-useful-life estimate, cut by cut.</p>
+      <ol class="how">
+        <li><b>Sense.</b> Force, vibration and acoustic-emission signals are recorded during each cut.</li>
+        <li><b>Extract.</b> A few statistics per channel summarise the cut. In production a gateway on the machine computes these at the edge, so only the compact features stream — not the raw waveform.</li>
+        <li><b>Estimate.</b> A particle filter recovers the tool's hidden flank wear from those features, and a Monte-Carlo projection turns the wear estimate into cuts-to-failure with a calibrated 90% interval.</li>
+        <li><b>Watch.</b> The dashboard updates every cut. Early in a tool's life — before it enters the wear-out regime — no RUL is shown, by design: the system won't print a confident number it can't yet stand behind.</li>
+      </ol>
+      <div class="row"><button class="btn" id="howClose">Close</button></div>
     </div>
   </div>
 
@@ -569,6 +590,11 @@ function upload(list){
   xhr.onerror=()=>{ status.textContent="upload failed (network)"; };
   xhr.send(fd);
 }
+
+$("howBtn").onclick=()=>$("howModal").classList.add("on");
+$("howBtn").onkeydown=(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); $("howModal").classList.add("on"); } };
+$("howClose").onclick=()=>$("howModal").classList.remove("on");
+$("howModal").onclick=e=>{ if(e.target===$("howModal")) $("howModal").classList.remove("on"); };
 
 init();
 </script>
