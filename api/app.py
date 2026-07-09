@@ -464,6 +464,8 @@ def create_app(store_dir: str = "var") -> FastAPI:
         data_store.clear_rul(run_id)
         twin = ParticleTwin(data_store, sigma_scale=sigma_scale, seed=0)
         labels = {l.cut_index: l.wear_mm for l in data_store.read_wear_labels(run_id)}
+        times = {c.cut_index: (c.ingested_at.isoformat() if c.ingested_at else None)
+                 for c in data_store.read_all_cuts(run_id)}
         feats = data_store.read_all_features(run_id)
         threshold_um = 200.0
 
@@ -479,7 +481,8 @@ def create_app(store_dir: str = "var") -> FastAPI:
                       "wear_hi": twin.last_wear_hi * 1000,
                       "wear_true": (wt * 1000) if wt is not None else None,
                       "rul_median": rul.rul_median, "rul_lo": rul.rul_lower,
-                      "rul_hi": rul.rul_upper, "censored": twin.last_rul_censored}
+                      "rul_hi": rul.rul_upper, "censored": twin.last_rul_censored,
+                      "time": times.get(f.cut_index)}
                 yield f"data: {json.dumps(ev)}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 

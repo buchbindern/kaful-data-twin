@@ -152,7 +152,7 @@
               <div class="t" id="h-tool">—</div>
               <div class="m" id="h-machine">—</div>
               <div class="model"><span class="lbl">Model</span>
-                <select id="h-model"><option value="self">self-fit</option></select><button id="replayBtn" class="btn" style="padding:4px 10px;font-size:12px">▶ replay</button></div>
+                <select id="h-model"><option value="self">self-fit</option></select></div>
             </div>
             <div class="rul">
               <div class="pill" id="h-pill"><span class="pd"></span><span id="h-status">—</span></div>
@@ -398,10 +398,9 @@ function select(run){
   $("empty").classList.add("hidden"); $("mon").classList.remove("hidden");
   $("h-tool").textContent="Tool "+disp;
   $("h-machine").textContent=(m?(m.name||m.machine_id):run.machine_id)+" · cnc milling"+(run.active?" · active":"");
-  modelOptions(run); loadResults();
+  modelOptions(run); startStream();
 }
-$("h-model").onchange=()=>{ if(cur) loadResults(true); };
-$("replayBtn").onclick=()=>{ if(cur) startStream(); };
+$("h-model").onchange=()=>{ if(cur) startStream(); };
 
 // ---------------- streaming + charts ----------------
 let cuts=[],wm=[],wlo=[],whi=[],wt=[],rc=[],rmed=[],rlo=[],rhi=[],N=0;
