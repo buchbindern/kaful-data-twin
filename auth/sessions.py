@@ -4,7 +4,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
-SESSION_TTL = timedelta(days=14)
+SESSION_TTL = timedelta(hours=2)
 
 
 def new_session_token() -> str:
