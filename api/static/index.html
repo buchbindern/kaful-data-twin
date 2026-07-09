@@ -250,6 +250,11 @@ const THRESH=200;
 const $=id=>document.getElementById(id);
 let me=null, machines=[], runs=[], cur=null, es=null, ingestTarget=null;
 const api=(url,opts={})=>fetch(url,{credentials:"same-origin",...opts});
+async function withBusy(btn, fn){
+  if(btn){ btn.disabled=true; btn.style.opacity=".55"; btn.style.cursor="progress"; }
+  try{ return await fn(); }
+  finally{ if(btn){ btn.disabled=false; btn.style.opacity=""; btn.style.cursor=""; } }
+}
 
 // ---------------- boot ----------------
 async function init(){
@@ -278,6 +283,9 @@ async function loadRail(selectRun){
   const [mR,rR]=await Promise.all([api("/machines"),api("/runs")]);
   machines=(await mR.json()).machines;
   runs=(await rR.json()).runs;
+  renderRail(selectRun);
+}
+function renderRail(selectRun){
   // system machines first, then owned
   machines.sort((a,b)=> (a.is_system===b.is_system) ? 0 : (a.is_system?-1:1));
   const rail=$("rail"); rail.innerHTML="";
@@ -289,7 +297,7 @@ async function loadRail(selectRun){
       (m.is_system?`<span class="badge">demo</span>`:``);
     if(!m.is_system && me){
       const nt=document.createElement("button"); nt.className="stream"; nt.textContent="+ tool";
-      nt.title="add a new tool to this machine"; nt.onclick=()=>newTool(m.machine_id); head.appendChild(nt);
+      nt.title="add a new tool to this machine"; nt.onclick=(e)=>newTool(m.machine_id, e.currentTarget); head.appendChild(nt);
       const rn=document.createElement("button"); rn.className="stream"; rn.textContent="rename";
       rn.onclick=()=>renameMachine(m); head.appendChild(rn);
       const dl=document.createElement("button"); dl.className="stream"; dl.style.color="var(--danger)";
@@ -336,27 +344,42 @@ function renderEmpty(){
   }else{ $("emptyMsg").textContent="Select a tool from the left to watch live wear and remaining-useful-life estimation."; $("emptyActions").innerHTML=""; }
 }
 
-async function newTool(machineId){
-  const r = await api(`/machines/${machineId}/runs`, {method:"POST",
-    headers:{"Content-Type":"application/json"}, body:JSON.stringify({})});
-  if(r.ok){ const d=await r.json(); await loadRail(d.run_id); }
+async function newTool(machineId, btn){
+  await withBusy(btn, async()=>{
+    const r = await api(`/machines/${machineId}/runs`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({})});
+    if(r.ok){ const d=await r.json();
+      runs.push({run_id:d.run_id, machine_id:machineId, label:null, n_cuts:0, has_labels:false});
+      renderRail(d.run_id);
+    }
+  });
 }
 async function deleteMachine(m){
   if(!confirm(`Delete machine "${m.name||m.machine_id}" and all its tools? This cannot be undone.`)) return;
   const r = await api(`/machines/${m.machine_id}`, {method:"DELETE"});
-  if(r.ok){ if(cur && cur.machine_id===m.machine_id) cur=null; await loadRail(); }
+  if(r.ok){
+    machines=machines.filter(x=>x.machine_id!==m.machine_id);
+    runs=runs.filter(x=>x.machine_id!==m.machine_id);
+    if(cur && cur.machine_id===m.machine_id) cur=null;
+    renderRail();
+  }
 }
 async function deleteRun(machineId, run){
   if(!confirm(`Delete tool "${run.label||run.run_id}" and its cuts?`)) return;
   const r = await api(`/machines/${machineId}/runs/${run.run_id}`, {method:"DELETE"});
-  if(r.ok){ if(cur && cur.run_id===run.run_id) cur=null; await loadRail(); }
+  if(r.ok){
+    runs=runs.filter(x=>x.run_id!==run.run_id);
+    if(cur && cur.run_id===run.run_id) cur=null;
+    renderRail();
+  }
 }
 function renameRun(machineId, run){
   openRename("Rename tool", run.label || run.run_id, async(name)=>{
     const r = await api(`/machines/${machineId}/runs/${run.run_id}`, {method:"PATCH",
       headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
     if(!r.ok){ $("renameErr").textContent = "rename failed"; return false; }
-    await loadRail(cur && cur.run_id);
+    const rr=runs.find(x=>x.run_id===run.run_id); if(rr) rr.label=name;
+    renderRail(cur && cur.run_id);
   });
 }
 function renameMachine(m){
@@ -364,7 +387,8 @@ function renameMachine(m){
     const r = await api(`/machines/${m.machine_id}`, {method:"PATCH",
       headers:{"Content-Type":"application/json"}, body:JSON.stringify({name})});
     if(!r.ok){ $("renameErr").textContent = "rename failed"; return false; }
-    await loadRail(cur && cur.run_id);
+    const mm=machines.find(x=>x.machine_id===m.machine_id); if(mm) mm.name=name;
+    renderRail(cur && cur.run_id);
   });
 }
 
@@ -504,7 +528,9 @@ $("machineCreate").onclick=async()=>{
   try{
     const r=await api("/machines",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
     if(!r.ok){ const j=await r.json().catch(()=>({detail:"failed"})); throw new Error(j.detail||"failed"); }
-    $("machineModal").classList.remove("on"); await loadRail();
+    const d=await r.json().catch(()=>({}));
+    if(d.machine_id) machines.push({machine_id:d.machine_id, name:d.name, is_system:false});
+    $("machineModal").classList.remove("on"); renderRail();
   }catch(err){ $("machineErr").textContent=err.message; }
 };
 
@@ -518,16 +544,30 @@ drop.onclick=()=>file.click();
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
 drop.addEventListener("drop",e=>{ if(e.dataTransfer.files.length) upload(e.dataTransfer.files); });
 file.onchange=()=>{ if(file.files.length) upload(file.files); };
-async function upload(list){
-  $("ingestErr").textContent=`uploading ${list.length} cut${list.length>1?"s":""}…`;
+function upload(list){
+  const status=$("ingestErr");
   const fd=new FormData(); [...list].forEach(f=>fd.append("files",f));
   if(ingestTarget){ fd.append("machine_id",ingestTarget.machine); if(ingestTarget.run) fd.append("run_id",ingestTarget.run); }
-  try{
-    const r=await api("/analyze",{method:"POST",body:fd});
-    if(!r.ok){ const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail||"failed"); }
-    const d=await r.json(); $("ingestModal").classList.remove("on"); file.value="";
-    await loadRail(d.run_id);
-  }catch(err){ $("ingestErr").textContent=err.message; }
+  const label=`${list.length} cut${list.length>1?"s":""}`;
+  status.textContent=`uploading ${label}… 0%`;
+  const xhr=new XMLHttpRequest();
+  xhr.open("POST","/analyze");
+  xhr.upload.onprogress=(e)=>{ if(!e.lengthComputable) return;
+    const pct=Math.round(e.loaded/e.total*100);
+    status.textContent = pct>=100 ? "processing on server…" : `uploading ${label}… ${pct}%`;
+  };
+  xhr.onload=async()=>{
+    if(xhr.status>=200 && xhr.status<300){
+      let d={}; try{ d=JSON.parse(xhr.responseText); }catch{}
+      $("ingestModal").classList.remove("on"); file.value="";
+      await loadRail(d.run_id);
+    }else{
+      let msg="upload failed"; try{ msg=JSON.parse(xhr.responseText).detail||msg; }catch{}
+      status.textContent=msg;
+    }
+  };
+  xhr.onerror=()=>{ status.textContent="upload failed (network)"; };
+  xhr.send(fd);
 }
 
 init();
