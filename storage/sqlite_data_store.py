@@ -325,6 +325,11 @@ class SQLiteDataStore(DataStore):
         ).fetchall()
         return [self._row_to_features(r) for r in rows]
 
+    def count_features(self, run_id: str) -> int:
+        return self._conn.execute(
+            "SELECT COUNT(*) FROM features WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+
     # ---------------- RUL predictions ----------------
     def read_all_cuts(self, run_id: str) -> list[Cut]:
         rows = self._conn.execute(
@@ -381,6 +386,11 @@ class SQLiteDataStore(DataStore):
              state.particles, _dt(state.updated_at)),
         )
         self._conn.commit()
+
+    def has_twin_state(self, run_id: str) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM twin_state WHERE run_id=?", (run_id,)
+        ).fetchone() is not None
 
     def load_twin_state(self, run_id: str) -> Optional[TwinState]:
         row = self._conn.execute(

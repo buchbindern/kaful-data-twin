@@ -136,6 +136,18 @@ class DataStore(ABC):
         and to fit the observation model on a labeled reference run (M5c)."""
         ...
 
+    # --- Derived per-cut queries (concrete; stores SHOULD override for speed) ---
+    # The live ingest path (Phase G) calls these on every cut, so the default
+    # O(n) / blob-loading implementations below matter: stores override them with
+    # a COUNT and an existence check so per-cut ingest stays O(1) and reads no blob.
+    def count_features(self, run_id: str) -> int:
+        """Number of feature rows for a run (used to assign the next cut_index)."""
+        return len(self.read_all_features(run_id))
+
+    def has_twin_state(self, run_id: str) -> bool:
+        """Whether a twin has been built for a run, without loading its state blob."""
+        return self.load_twin_state(run_id) is not None
+
 
 class ObjectStore(ABC):
     """Persistence for large, immutable raw-waveform blobs, addressed by key.

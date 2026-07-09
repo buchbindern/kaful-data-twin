@@ -287,6 +287,10 @@ class PostgresDataStore(DataStore):
         rows = self._all("SELECT * FROM features WHERE run_id=%s ORDER BY cut_index", (run_id,))
         return [self._row_to_features(r) for r in rows]
 
+    def count_features(self, run_id: str) -> int:
+        r = self._one("SELECT COUNT(*) AS n FROM features WHERE run_id=%s", (run_id,))
+        return int(r["n"]) if r else 0
+
     # ---------------- RUL ----------------
     def read_all_cuts(self, run_id: str) -> list[Cut]:
         rows = self._all("SELECT * FROM cuts WHERE run_id=%s ORDER BY cut_index", (run_id,))
@@ -338,6 +342,9 @@ class PostgresDataStore(DataStore):
                    "updated_at=excluded.updated_at",
                    (state.run_id, state.cut_index, json.dumps(state.params),
                     state.particles, _dt(state.updated_at)))
+
+    def has_twin_state(self, run_id: str) -> bool:
+        return self._one("SELECT 1 AS ok FROM twin_state WHERE run_id=%s", (run_id,)) is not None
 
     def load_twin_state(self, run_id: str) -> Optional[TwinState]:
         r = self._one("SELECT * FROM twin_state WHERE run_id=%s", (run_id,))

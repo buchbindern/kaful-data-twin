@@ -23,11 +23,13 @@ import os
 import random
 import re
 import secrets
+import threading
 import uuid
 from datetime import datetime, timezone
 
 import numpy as np
 from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File, Form, Depends
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
@@ -39,6 +41,30 @@ from ingest import IngestHandler
 from twin import ParticleTwin, start_new_run, deploy_from_reference
 from auth import (hash_password, verify_password, new_session_token, session_expiry,
                   SESSION_TTL, RateLimiter)
+
+
+# --- Per-run ingest locks (Phase G, rung 1) --------------------------------
+# ingest_cut assigns cut_index and does a twin_state load->update->save; for a
+# single run those steps must not interleave (duplicate index / lost update).
+# Keyed by run_id, so DIFFERENT runs take DIFFERENT locks and the fleet path
+# (many runs ingesting at once) still runs fully in parallel — only same-run
+# cuts serialize.
+#
+# In-process threading.Locks, correct for one uvicorn worker with the handler
+# offloaded to the threadpool. Running multiple worker PROCESSES (rung 3) will
+# need a Postgres advisory lock on run_id instead — a threading.Lock doesn't
+# span processes.
+_run_locks: dict[str, threading.Lock] = {}
+_run_locks_guard = threading.Lock()
+
+
+def _run_lock(run_id: str) -> threading.Lock:
+    with _run_locks_guard:
+        lock = _run_locks.get(run_id)
+        if lock is None:
+            lock = threading.Lock()
+            _run_locks[run_id] = lock
+        return lock
 
 
 class Credentials(BaseModel):
@@ -294,25 +320,38 @@ def create_app(store_dir: str = "var") -> FastAPI:
     @app.post("/machines/{machine_id}/runs/{run_id}/cuts")
     async def ingest_cut(machine_id: str, run_id: str, request: Request,
                          user: User = Depends(require_user)):
-        _writable_machine(machine_id, user)
-        raw = await request.body()                      # the compressed waveform blob
+        # Read the blob on the event loop (async, cheap), then hand ALL blocking
+        # work — validation reads, decode, feature extraction, PF update, DB writes
+        # — to the threadpool, so one cut no longer monopolizes the loop. Cuts for
+        # DIFFERENT runs now overlap; same-run cuts serialize on the per-run lock.
+        raw = await request.body()
         if not raw:
             raise HTTPException(status_code=400, detail="empty body: expected waveform bytes")
-        run = data_store.get_run(run_id)
-        if run is None:
-            raise HTTPException(status_code=404, detail=f"run {run_id!r} does not exist")
-        if run.ended_at is not None:
-            raise HTTPException(status_code=409,
-                                detail=f"run {run_id!r} is archived (ended) and does not accept new cuts")
-        if data_store.read_wear_labels(run_id):
-            raise HTTPException(status_code=409,
-                                detail=f"run {run_id!r} is a labeled reference run and does not accept live cuts")
-        if data_store.load_twin_state(run_id) is None:
-            raise HTTPException(status_code=409,
-                                detail=f"no twin built for run {run_id!r}; build_twin first")
-        cut_index = len(data_store.read_all_features(run_id)) + 1
+
+        def _work():
+            with _run_lock(run_id):
+                _writable_machine(machine_id, user)
+                run = data_store.get_run(run_id)
+                if run is None:
+                    raise HTTPException(status_code=404, detail=f"run {run_id!r} does not exist")
+                if run.ended_at is not None:
+                    raise HTTPException(status_code=409,
+                                        detail=f"run {run_id!r} is archived (ended) and does not accept new cuts")
+                if data_store.read_wear_labels(run_id):
+                    raise HTTPException(status_code=409,
+                                        detail=f"run {run_id!r} is a labeled reference run and does not accept live cuts")
+                if not data_store.has_twin_state(run_id):
+                    raise HTTPException(status_code=409,
+                                        detail=f"no twin built for run {run_id!r}; build_twin first")
+                # O(1) index via COUNT (was: load + JSON-decode every prior feature row
+                # on every cut — O(n) per cut, O(n^2) per run).
+                cut_index = data_store.count_features(run_id) + 1
+                return handler.ingest_cut(machine_id, run_id, cut_index, raw)
+
         try:
-            rul = handler.ingest_cut(machine_id, run_id, cut_index, raw)
+            rul = await run_in_threadpool(_work)
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         return {"cut_index": rul.cut_index, "rul_median": rul.rul_median,
