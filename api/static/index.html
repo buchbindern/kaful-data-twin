@@ -255,12 +255,12 @@
   <div class="modal" id="howModal">
     <div class="sheet">
       <h3>How it works</h3>
-      <p>Kaful turns raw CNC tool-sensor signals into a live remaining-useful-life estimate, cut by cut.</p>
+      <p>Kaful turns raw CNC tool sensor signals into a live remaining useful life estimate, cut by cut.</p>
       <ol class="how">
-        <li><b>Sense.</b> Force, vibration and acoustic-emission signals are recorded during each cut.</li>
-        <li><b>Extract.</b> A few statistics per channel summarise the cut. In production a gateway on the machine computes these at the edge, so only the compact features stream — not the raw waveform.</li>
-        <li><b>Estimate.</b> A particle filter recovers the tool's hidden flank wear from those features, and a Monte-Carlo projection turns the wear estimate into cuts-to-failure with a calibrated 90% interval.</li>
-        <li><b>Watch.</b> The dashboard updates every cut. Early in a tool's life — before it enters the wear-out regime — no RUL is shown, by design: the system won't print a confident number it can't yet stand behind.</li>
+        <li><b>Sense.</b> Force, vibration and acoustic emission signals are recorded during each cut.</li>
+        <li><b>Extract.</b> A few statistics per channel summarise the cut.</li>
+        <li><b>Estimate.</b> A particle filter recovers the tool's hidden flank wear from those features, and a Monte Carlo projection turns the wear estimate into cuts to failure with a calibrated 90% interval.</li>
+        <li><b>Watch.</b> The dashboard updates every cut. Early in a tool's life — before it enters the wear out regime — no RUL is shown, by design: the system won't print a confident number it can't yet stand behind.</li>
       </ol>
       <div class="row"><button class="btn" id="howClose">Close</button></div>
     </div>
