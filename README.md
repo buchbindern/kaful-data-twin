@@ -112,9 +112,41 @@ built to be accurate where it can be and honestly wide where it must be.
 - `GET  /runs`, `GET /` — run list and the monitoring UI.
 
 **Storage** — different data, different stores, behind interfaces:
-- Features / labels / RUL / twin-state → SQLite (`DataStore` interface).
+- Accounts / machines / tools / features / labels / RUL / twin-state → SQLite for local
+  dev, **Postgres in production**, both behind one `DataStore` interface (`KAFUL_DB`
+  selects at startup; nothing above the interface knows which backend is live).
 - Raw waveforms → object storage (`ObjectStore` interface): local filesystem, or any
   S3-compatible service (AWS S3 / Cloudflare R2 / Backblaze B2), selected by one env var.
+
+**Auth & multi-tenancy** — email/password accounts (bcrypt), opaque server-side session
+tokens in an HTTP-only cookie, per-IP rate limiting on login/signup. Every machine carries
+an `owner_id`: a user sees the shared reference tools (read-only) plus their own machines,
+and any cross-tenant access returns 404 rather than leaking that the resource exists.
+
+**Scale & concurrency** — the ingest path is built for many tools reporting at once. Each
+`POST …/cuts` reads the blob on the event loop, then hands all blocking work (decode,
+feature extraction, filter update, DB writes) to a threadpool, so one cut never monopolizes
+the loop. A **per-run lock** serializes the index-assign → update → save for a single run
+while letting *different* runs ingest fully in parallel — the fleet case. The one measured
+bottleneck was fixed: per-cut index assignment was O(n) (it decoded every prior feature row),
+making a run O(n²); it is now an O(1) `COUNT`.
+
+Measured on the live HTTP path against local Postgres, single Uvicorn worker, sweeping
+concurrent runs (`scripts/loadtest.py`; raw CSVs in `bench/`):
+
+| concurrent runs | throughput (cuts/s), before → after | p99 latency (ms), before → after |
+|--:|:--|:--|
+| 1  | 12.5 → 11.1 | 100 → 129 |
+| 2  | 13.1 → 18.8 | 176 → 135 |
+| 5  | 13.3 → 22.7 | 475 → 442 |
+| 10 | 12.8 → 24.7 | 947 → 685 |
+
+Before, throughput was flat at ~13 cuts/s no matter the concurrency — the serialized path
+ignored the extra load. After, it scales with concurrency to ~25 cuts/s at 10 runs and tail
+latency roughly halves; the single-run case pays a small offload overhead (the one honest
+regression). The next rung — multiple worker *processes* — needs a Postgres advisory lock on
+`run_id` in place of the in-process `threading.Lock`; the `DataStore` interface already allows
+the swap.
 
 **Run lifecycle** — a machine persists; tools come and go. Each tool installation is a
 `Run` (wear starts at zero). A tool change ends the current run, archives it, and
@@ -129,7 +161,8 @@ fitted model and a reference model.
 
 ```
 domain/        dataclasses + abstract DataStore / ObjectStore interfaces
-storage/       SQLiteDataStore, FilesystemObjectStore, S3ObjectStore (env-selected)
+storage/       SQLite + Postgres DataStores, Filesystem + S3 ObjectStores (env-selected)
+auth/          password hashing (bcrypt), server-side session tokens, per-IP rate limiter
 features/      FeatureExtractor (6 stats x 7 channels = 42 features)
 datasets/      PHM 2010 adapter (waveform + wear-label loading)
 ingest/        waveform codec, IngestHandler (orchestrates one cut), replay driver
@@ -161,5 +194,6 @@ python scripts/serve.py                          # live monitor at http://127.0.
 
 ## Tech stack
 
-Python 3.11 · NumPy / SciPy (particle filter, model fitting, Monte Carlo) · SQLite ·
-boto3 (S3-compatible object storage) · FastAPI + Uvicorn (HTTP + SSE) · pytest.
+Python 3.11 · NumPy / SciPy (particle filter, model fitting, Monte Carlo) · SQLite / Postgres
+(psycopg 3) · bcrypt · boto3 (S3-compatible object storage) · FastAPI + Uvicorn (HTTP + SSE) ·
+pytest (141 tests, incl. SQLite/Postgres parity, ingest-scale, auth, security).

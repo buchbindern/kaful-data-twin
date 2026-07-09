@@ -6,11 +6,16 @@ POST a compressed waveform, the endpoint hands its RAW BYTES straight to
 handler.ingest_cut() — the identical call the in-process replay driver makes.
 No twin/handler/storage code changes; only the transport is new.
 
-Concurrency note: SQLiteDataStore uses one connection and ParticleTwin does a
-load->update->save on shared twin_state, which is NOT safe under simultaneous
-cuts for the SAME run. A single machine emits one cut every few minutes, so this
-is a non-issue here; the fleet path is per-run locking + Postgres (swap the
-DataStore impl — the interface already allows it). Run uvicorn single-worker.
+Concurrency model (Phase G): each POST reads the blob on the event loop, then
+offloads all blocking work — validation reads, decode, feature extraction, the
+particle filter update, and DB writes — to the threadpool, so one cut never
+monopolizes the loop. The index-assign -> update -> save on a run's shared
+twin_state is not safe if two cuts for the SAME run interleave, so it runs under
+a per-run lock (see _run_lock): different runs ingest in parallel, only same-run
+cuts serialize. Correct for a single Uvicorn worker; running multiple worker
+PROCESSES needs a Postgres advisory lock on run_id instead — an in-process
+threading.Lock does not span processes. Backing store is env-selected
+(SQLite | Postgres) behind the DataStore interface; Postgres in production.
 """
 
 from __future__ import annotations
